@@ -25,3 +25,15 @@ export interface DoseRecord {
 export interface MedicationWithNextDose extends Medication {
   next_dose_at?: Date;
 }
+
+export interface CaregiverLink {
+  id: string;
+  patient_user_id: string;
+  patient_email: string;
+  caregiver_user_id: string | null;
+  caregiver_email: string | null;
+  invite_code: string;
+  status: 'pending' | 'accepted';
+  created_at: string;
+  accepted_at: string | null;
+}

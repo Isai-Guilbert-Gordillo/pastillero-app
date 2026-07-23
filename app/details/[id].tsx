@@ -5,7 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
@@ -16,10 +15,17 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
-import { useAuth } from '@/context/AuthContext';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useAppAlert } from '@/components/AppAlert';
+import PatientBanner from '@/components/PatientBanner';
+import Button from '@/components/ui/Button';
+import Card from '@/components/ui/Card';
+import Chip from '@/components/ui/Chip';
+import IconBadge from '@/components/ui/IconBadge';
+import { useCaregiver } from '@/context/CaregiverContext';
 import { supabase } from '@/lib/supabase';
-import { cancelAllMedicationNotifications, scheduleMedicationNotifications } from '@/lib/notifications';
-import { COLORS, FONTS, SPACING, BORDER_RADIUS, TOUCH_TARGET } from '@/lib/theme';
+import { cancelAllMedicationNotifications, scheduleMedicationNotifications, scheduleNativeAlarms } from '@/lib/notifications';
+import { COLORS, FONTS, SPACING, BORDER_RADIUS, TOUCH_TARGET, SHADOWS } from '@/lib/theme';
 import { Medication } from '@/lib/types';
 
 // ─── Opciones reutilizadas del formulario add.tsx ───
@@ -39,19 +45,23 @@ const TIME_OPTIONS = [
   { label: '😴 22:00', sub: 'Noche', value: '22:00' },
 ];
 
-const CARD_SHADOW = {
-  shadowColor: COLORS.cardShadow,
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.05,
-  shadowRadius: 8,
-  elevation: 3,
-};
+const DAYS_OF_WEEK = [
+  { label: 'L', full: 'Lunes', value: 'mon' },
+  { label: 'M', full: 'Martes', value: 'tue' },
+  { label: 'Mi', full: 'Miércoles', value: 'wed' },
+  { label: 'J', full: 'Jueves', value: 'thu' },
+  { label: 'V', full: 'Viernes', value: 'fri' },
+  { label: 'S', full: 'Sábado', value: 'sat' },
+  { label: 'D', full: 'Domingo', value: 'sun' },
+];
+const ALL_DAYS = DAYS_OF_WEEK.map((d) => d.value);
 
 export default function MedicationDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { user } = useAuth();
+  const { isViewingOther, activePatientLabel } = useCaregiver();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { alert } = useAppAlert();
 
   const [medication, setMedication] = useState<Medication | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,6 +74,7 @@ export default function MedicationDetailScreen() {
   const [editFrequency, setEditFrequency] = useState('8');
   const [editStartTime, setEditStartTime] = useState('08:00');
   const [editImageUri, setEditImageUri] = useState<string | null>(null);
+  const [editSelectedDays, setEditSelectedDays] = useState<string[]>(ALL_DAYS);
 
   const fetchMedication = async () => {
     if (!id) return;
@@ -74,7 +85,7 @@ export default function MedicationDetailScreen() {
       .single();
 
     if (error || !data) {
-      Alert.alert('Error', 'No se encontró el medicamento.');
+      alert('Error', 'No se encontró el medicamento.');
       router.back();
       return;
     }
@@ -85,7 +96,16 @@ export default function MedicationDetailScreen() {
     setEditFrequency(String(data.frequency_hours));
     setEditStartTime(data.start_time);
     setEditImageUri(data.photo_url);
+    setEditSelectedDays(data.days_of_week?.length ? data.days_of_week : ALL_DAYS);
     setLoading(false);
+  };
+
+  const toggleEditDay = (day: string) => {
+    setEditSelectedDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
+  };
+
+  const selectAllEditDays = () => {
+    setEditSelectedDays((prev) => (prev.length === 7 ? [] : ALL_DAYS));
   };
 
   useFocusEffect(
@@ -111,7 +131,7 @@ export default function MedicationDetailScreen() {
 
   // ─── Delete (soft delete: active = false) ───
   const handleDelete = () => {
-    Alert.alert(
+    alert(
       'Eliminar medicamento',
       '¿Estás seguro de que quieres eliminar este recordatorio?',
       [
@@ -128,7 +148,7 @@ export default function MedicationDetailScreen() {
               .eq('id', medication.id);
 
             if (error) {
-              Alert.alert('Error', 'No se pudo eliminar el medicamento.');
+              alert('Error', 'No se pudo eliminar el medicamento.');
               return;
             }
             router.back();
@@ -144,7 +164,7 @@ export default function MedicationDetailScreen() {
     if (fromCamera) {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permiso necesario', 'Necesitamos acceso a la cámara.');
+        alert('Permiso necesario', 'Necesitamos acceso a la cámara.');
         return;
       }
       result = await ImagePicker.launchCameraAsync({
@@ -156,7 +176,7 @@ export default function MedicationDetailScreen() {
     } else {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permiso necesario', 'Necesitamos acceso a tu galería.');
+        alert('Permiso necesario', 'Necesitamos acceso a tu galería.');
         return;
       }
       result = await ImagePicker.launchImageLibraryAsync({
@@ -172,7 +192,7 @@ export default function MedicationDetailScreen() {
   };
 
   const showImageOptions = () => {
-    Alert.alert('Seleccionar foto', '¿De dónde quieres obtener la foto?', [
+    alert('Seleccionar foto', '¿De dónde quieres obtener la foto?', [
       { text: 'Cámara', onPress: () => pickImage(true) },
       { text: 'Galería', onPress: () => pickImage(false) },
       { text: 'Cancelar', style: 'cancel' },
@@ -181,7 +201,7 @@ export default function MedicationDetailScreen() {
 
   const uploadImage = async (uri: string): Promise<string | null> => {
     try {
-      const fileName = `${user!.id}/${Date.now()}.jpg`;
+      const fileName = `${medication!.user_id}/${Date.now()}.jpg`;
       const response = await fetch(uri);
       const blob = await response.blob();
       const arrayBuffer = await new Response(blob).arrayBuffer();
@@ -204,15 +224,29 @@ export default function MedicationDetailScreen() {
   // ─── Save edits ───
   const handleSaveEdit = async () => {
     if (!editName.trim()) {
-      Alert.alert('Error', 'Ingresa el nombre del medicamento');
+      alert('Error', 'Ingresa el nombre del medicamento');
       return;
     }
     if (!editDoseMg || isNaN(Number(editDoseMg)) || Number(editDoseMg) <= 0) {
-      Alert.alert('Error', 'Ingresa una dosis válida en mg');
+      alert('Error', 'Ingresa una dosis válida en mg');
+      return;
+    }
+    if (editSelectedDays.length === 0) {
+      alert('Error', 'Selecciona al menos un día de la semana');
       return;
     }
 
     setSaving(true);
+
+    // Solo recrear la alarma nativa si cambió el horario, la frecuencia o los
+    // días (evita acumular alarmas duplicadas en el Reloj por cada edición).
+    const daysChanged =
+      editSelectedDays.length !== (medication?.days_of_week?.length ?? 7) ||
+      [...editSelectedDays].sort().join(',') !== [...(medication?.days_of_week ?? ALL_DAYS)].sort().join(',');
+    const scheduleChanged =
+      editStartTime !== medication?.start_time ||
+      Number(editFrequency) !== medication?.frequency_hours ||
+      daysChanged;
 
     let photoUrl = medication?.photo_url ?? null;
     // Upload new image only if it changed and is a local URI
@@ -228,6 +262,7 @@ export default function MedicationDetailScreen() {
         dose_mg: Number(editDoseMg),
         frequency_hours: Number(editFrequency),
         start_time: editStartTime,
+        days_of_week: editSelectedDays,
         photo_url: photoUrl,
       })
       .eq('id', medication!.id)
@@ -235,15 +270,39 @@ export default function MedicationDetailScreen() {
       .single();
 
     if (error) {
-      Alert.alert('Error', 'No se pudo actualizar el medicamento.');
+      alert('Error', 'No se pudo actualizar el medicamento.');
       setSaving(false);
       return;
     }
 
-    // Reschedule notifications
+    // Reschedule notifications — pero solo en el teléfono de la propia persona.
+    // Las alarmas son locales al dispositivo; si esto se guarda desde el modo
+    // cuidador, reprogramarlas aquí sonaría en el teléfono del cuidador, no en
+    // el del paciente, así que en ese caso solo avisamos.
     if (data) {
-      await cancelAllMedicationNotifications(data.id);
-      await scheduleMedicationNotifications(data);
+      if (!isViewingOther) {
+        await cancelAllMedicationNotifications(data.id);
+        await scheduleMedicationNotifications(data);
+        if (scheduleChanged) {
+          const alarmResult = await scheduleNativeAlarms(data);
+          if (alarmResult.attempted > 0 && alarmResult.succeeded === 0) {
+            alert(
+              'No se pudo crear la alarma',
+              `El horario se guardó, pero no se pudo crear la alarma en el Reloj de tu teléfono.\n\nDetalle: ${alarmResult.errors[0] ?? 'error desconocido'}`
+            );
+          } else if (alarmResult.succeeded > 0) {
+            alert(
+              '⏰ Horario cambiado',
+              'Se creó una alarma nueva en el Reloj de tu teléfono. Si quieres, borra ahí la alarma anterior para que no queden dos.'
+            );
+          }
+        }
+      } else if (scheduleChanged) {
+        alert(
+          '✅ Guardado, pero falta un paso',
+          `El horario se actualizó en la cuenta de ${activePatientLabel}, pero la alarma NO va a sonar hasta que esa persona abra PastilleroApp en su propio teléfono.`
+        );
+      }
       setMedication(data);
     }
 
@@ -268,6 +327,7 @@ export default function MedicationDetailScreen() {
   if (editing) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
+        <PatientBanner />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={{ flex: 1 }}
@@ -282,6 +342,7 @@ export default function MedicationDetailScreen() {
                 setEditFrequency(String(medication.frequency_hours));
                 setEditStartTime(medication.start_time);
                 setEditImageUri(medication.photo_url);
+                setEditSelectedDays(medication.days_of_week?.length ? medication.days_of_week : ALL_DAYS);
                 setEditing(false);
               }}
               style={styles.editHeaderBtn}
@@ -300,27 +361,23 @@ export default function MedicationDetailScreen() {
             showsVerticalScrollIndicator={false}
           >
             {/* Photo */}
-            <TouchableOpacity
-              style={[styles.sectionCard, styles.photoCardEdit]}
-              onPress={showImageOptions}
-              activeOpacity={0.7}
-            >
-              {editImageUri ? (
-                <Image source={{ uri: editImageUri }} style={styles.photoEdit} contentFit="cover" />
-              ) : (
-                <View style={styles.photoPlaceholderEdit}>
-                  <Ionicons name="camera" size={36} color={COLORS.primary} />
-                  <Text style={styles.photoHintEdit}>Cambiar foto</Text>
-                </View>
-              )}
+            <TouchableOpacity onPress={showImageOptions} activeOpacity={0.7}>
+              <Card style={styles.photoCardEdit}>
+                {editImageUri ? (
+                  <Image source={{ uri: editImageUri }} style={styles.photoEdit} contentFit="cover" />
+                ) : (
+                  <View style={styles.photoPlaceholderEdit}>
+                    <IconBadge name="camera" color={COLORS.primary} backgroundColor={COLORS.primaryBg} size={72} iconSize={34} />
+                    <Text style={styles.photoHintEdit}>Cambiar foto</Text>
+                  </View>
+                )}
+              </Card>
             </TouchableOpacity>
 
             {/* Name */}
-            <View style={styles.sectionCard}>
+            <Card style={styles.sectionCard}>
               <View style={styles.cardHeader}>
-                <View style={styles.iconCircle}>
-                  <Ionicons name="medical" size={22} color={COLORS.accent} />
-                </View>
+                <IconBadge name="medical" color={COLORS.accent} backgroundColor="#FFE4E8" />
                 <Text style={styles.sectionLabel}>Nombre del medicamento</Text>
               </View>
               <View style={styles.inputInner}>
@@ -333,14 +390,12 @@ export default function MedicationDetailScreen() {
                   autoCapitalize="words"
                 />
               </View>
-            </View>
+            </Card>
 
             {/* Dose */}
-            <View style={styles.sectionCard}>
+            <Card style={styles.sectionCard}>
               <View style={styles.cardHeader}>
-                <View style={styles.iconCircle}>
-                  <Ionicons name="fitness" size={22} color={COLORS.accent} />
-                </View>
+                <IconBadge name="fitness" color={COLORS.accent} backgroundColor="#FFE4E8" />
                 <Text style={styles.sectionLabel}>Dosis</Text>
               </View>
               <View style={styles.inputInner}>
@@ -354,79 +409,80 @@ export default function MedicationDetailScreen() {
                 />
                 <Text style={styles.unitText}>mg</Text>
               </View>
-            </View>
+            </Card>
 
             {/* Frequency */}
-            <View style={styles.sectionCard}>
+            <Card style={styles.sectionCard}>
               <View style={styles.cardHeader}>
-                <View style={styles.iconCircle}>
-                  <Ionicons name="repeat" size={22} color={COLORS.accent} />
-                </View>
+                <IconBadge name="repeat" color={COLORS.accent} backgroundColor="#FFE4E8" />
                 <Text style={styles.sectionLabel}>¿Con qué frecuencia?</Text>
               </View>
               <View style={styles.chipRow}>
-                {FREQUENCY_OPTIONS.map((opt) => {
-                  const isActive = editFrequency === opt.value;
-                  return (
-                    <TouchableOpacity
-                      key={opt.value}
-                      style={[styles.chip, isActive && styles.chipActive]}
-                      onPress={() => setEditFrequency(opt.value)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
-                        {opt.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                {FREQUENCY_OPTIONS.map((opt) => (
+                  <Chip
+                    key={opt.value}
+                    label={opt.label}
+                    selected={editFrequency === opt.value}
+                    onPress={() => setEditFrequency(opt.value)}
+                    compact
+                  />
+                ))}
               </View>
-            </View>
+            </Card>
 
             {/* Start Time */}
-            <View style={styles.sectionCard}>
+            <Card style={styles.sectionCard}>
               <View style={styles.cardHeader}>
-                <View style={styles.iconCircle}>
-                  <Ionicons name="time" size={22} color={COLORS.accent} />
-                </View>
+                <IconBadge name="time" color={COLORS.accent} backgroundColor="#FFE4E8" />
                 <Text style={styles.sectionLabel}>¿A qué hora empieza?</Text>
               </View>
               <View style={styles.chipRow}>
-                {TIME_OPTIONS.map((opt) => {
-                  const isActive = editStartTime === opt.value;
-                  return (
-                    <TouchableOpacity
-                      key={opt.value}
-                      style={[styles.timeChip, isActive && styles.chipActive]}
-                      onPress={() => setEditStartTime(opt.value)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.timeChipEmoji}>{opt.label}</Text>
-                      <Text style={[styles.timeChipSub, isActive && styles.timeChipSubActive]}>
-                        {opt.sub}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                {TIME_OPTIONS.map((opt) => (
+                  <Chip
+                    key={opt.value}
+                    emoji={opt.label}
+                    label=""
+                    subLabel={opt.sub}
+                    selected={editStartTime === opt.value}
+                    onPress={() => setEditStartTime(opt.value)}
+                  />
+                ))}
               </View>
-            </View>
+            </Card>
+
+            {/* Days of Week */}
+            <Card style={styles.sectionCard}>
+              <View style={styles.cardHeader}>
+                <IconBadge name="calendar" color={COLORS.accent} backgroundColor="#FFE4E8" />
+                <Text style={styles.sectionLabel}>¿Qué días?</Text>
+                <TouchableOpacity onPress={selectAllEditDays} activeOpacity={0.7}>
+                  <Text style={styles.selectAllText}>
+                    {editSelectedDays.length === 7 ? 'Quitar todos' : 'Todos los días'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.daysRow}>
+                {DAYS_OF_WEEK.map((day) => (
+                  <Chip
+                    key={day.value}
+                    label={day.label}
+                    subLabel={day.full}
+                    selected={editSelectedDays.includes(day.value)}
+                    onPress={() => toggleEditDay(day.value)}
+                    style={styles.dayChip}
+                  />
+                ))}
+              </View>
+            </Card>
 
             {/* Save Edit Button */}
-            <TouchableOpacity
-              style={[styles.saveBtn, saving && { opacity: 0.7 }]}
+            <Button
+              title="Guardar Cambios"
+              icon="checkmark-circle"
               onPress={handleSaveEdit}
-              disabled={saving}
-              activeOpacity={0.7}
-            >
-              {saving ? (
-                <ActivityIndicator color={COLORS.white} size="large" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={28} color={COLORS.white} />
-                  <Text style={styles.saveBtnText}>Guardar Cambios</Text>
-                </>
-              )}
-            </TouchableOpacity>
+              loading={saving}
+              style={styles.saveBtn}
+            />
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -438,6 +494,7 @@ export default function MedicationDetailScreen() {
   // ═══════════════════════════════════════════
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <PatientBanner />
       <ScrollView
         contentContainerStyle={[styles.detailScroll, { paddingBottom: insets.bottom + 40 }]}
         showsVerticalScrollIndicator={false}
@@ -463,68 +520,64 @@ export default function MedicationDetailScreen() {
         </View>
 
         {/* ─── Photo / Icon Hero ─── */}
-        <View style={[styles.sectionCard, styles.heroCard]}>
-          {medication.photo_url ? (
-            <Image source={{ uri: medication.photo_url }} style={styles.heroImage} contentFit="cover" />
-          ) : (
-            <View style={styles.heroIconCircle}>
-              <Text style={styles.heroEmoji}>💊</Text>
-            </View>
-          )}
-          <Text style={styles.heroName}>{medication.name}</Text>
-          <Text style={styles.heroDose}>{medication.dose_mg} mg</Text>
-        </View>
+        <Animated.View entering={FadeInDown.duration(350)}>
+          <Card style={styles.heroCard}>
+            {medication.photo_url ? (
+              <Image source={{ uri: medication.photo_url }} style={styles.heroImage} contentFit="cover" />
+            ) : (
+              <View style={styles.heroIconCircle}>
+                <Text style={styles.heroEmoji}>💊</Text>
+              </View>
+            )}
+            <Text style={styles.heroName}>{medication.name}</Text>
+            <Text style={styles.heroDose}>{medication.dose_mg} mg</Text>
+          </Card>
+        </Animated.View>
 
         {/* ─── Info Cards ─── */}
-        <View style={styles.sectionCard}>
-          <View style={styles.infoRow}>
-            <View style={styles.infoIconCircle}>
-              <Ionicons name="repeat" size={22} color={COLORS.primary} />
+        <Animated.View entering={FadeInDown.duration(350).delay(60)}>
+          <Card style={styles.sectionCard}>
+            <View style={styles.infoRow}>
+              <IconBadge name="repeat" color={COLORS.primary} backgroundColor={COLORS.primaryBg} size={44} />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Frecuencia</Text>
+                <Text style={styles.infoValue}>Cada {medication.frequency_hours} horas</Text>
+              </View>
             </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Frecuencia</Text>
-              <Text style={styles.infoValue}>Cada {medication.frequency_hours} horas</Text>
+            <View style={styles.divider} />
+            <View style={styles.infoRow}>
+              <IconBadge name="time" color={COLORS.secondary} backgroundColor={COLORS.secondaryLight} size={44} />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Hora de inicio</Text>
+                <Text style={styles.infoValue}>{medication.start_time}</Text>
+              </View>
             </View>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.infoRow}>
-            <View style={styles.infoIconCircle}>
-              <Ionicons name="time" size={22} color={COLORS.primary} />
+            <View style={styles.divider} />
+            <View style={styles.infoRow}>
+              <IconBadge name="alarm" color={COLORS.warning} backgroundColor={COLORS.warningLight} size={44} />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Próxima toma</Text>
+                <Text style={[styles.infoValue, { color: COLORS.warning }]}>
+                  {getNextDoseTime(medication)}
+                </Text>
+              </View>
             </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Hora de inicio</Text>
-              <Text style={styles.infoValue}>{medication.start_time}</Text>
+            <View style={styles.divider} />
+            <View style={styles.infoRow}>
+              <IconBadge name="calendar" color={COLORS.textSecondary} backgroundColor={COLORS.inputBg} size={44} />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Agregado</Text>
+                <Text style={styles.infoValue}>
+                  {new Date(medication.created_at).toLocaleDateString('es-MX', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
+                </Text>
+              </View>
             </View>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.infoRow}>
-            <View style={styles.infoIconCircle}>
-              <Ionicons name="alarm" size={22} color={COLORS.warning} />
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Próxima toma</Text>
-              <Text style={[styles.infoValue, { color: COLORS.warning, fontWeight: 'bold' }]}>
-                {getNextDoseTime(medication)}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.infoRow}>
-            <View style={styles.infoIconCircle}>
-              <Ionicons name="calendar" size={22} color={COLORS.textSecondary} />
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Agregado</Text>
-              <Text style={styles.infoValue}>
-                {new Date(medication.created_at).toLocaleDateString('es-MX', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </Text>
-            </View>
-          </View>
-        </View>
+          </Card>
+        </Animated.View>
 
         {/* ─── Delete Button (texto rojo discreto) ─── */}
         <TouchableOpacity
@@ -532,7 +585,7 @@ export default function MedicationDetailScreen() {
           onPress={handleDelete}
           activeOpacity={0.6}
         >
-          <Ionicons name="trash-outline" size={22} color="#D32F2F" />
+          <Ionicons name="trash-outline" size={22} color={COLORS.danger} />
           <Text style={styles.deleteBtnText}>Eliminar Medicamento</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -567,11 +620,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card,
     justifyContent: 'center',
     alignItems: 'center',
-    ...CARD_SHADOW,
+    ...SHADOWS.card,
   },
   topBarTitle: {
     fontSize: FONTS.sizeLarge,
-    fontWeight: 'bold',
+    fontFamily: FONTS.family.bold,
     color: COLORS.text,
   },
   editBtn: {
@@ -586,20 +639,17 @@ const styles = StyleSheet.create({
   },
   editBtnText: {
     fontSize: FONTS.sizeSmall,
-    fontWeight: '700',
+    fontFamily: FONTS.family.bold,
     color: COLORS.primary,
   },
   // ─── Hero Card ───
   sectionCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: SPACING.lg,
     marginBottom: SPACING.md,
-    ...CARD_SHADOW,
   },
   heroCard: {
     alignItems: 'center',
     paddingVertical: SPACING.xl,
+    marginBottom: SPACING.md,
   },
   heroImage: {
     width: 120,
@@ -621,12 +671,13 @@ const styles = StyleSheet.create({
   },
   heroName: {
     fontSize: FONTS.sizeXLarge,
-    fontWeight: 'bold',
+    fontFamily: FONTS.family.bold,
     color: COLORS.text,
     textAlign: 'center',
   },
   heroDose: {
     fontSize: FONTS.sizeLarge,
+    fontFamily: FONTS.family.medium,
     color: COLORS.textSecondary,
     marginTop: 4,
   },
@@ -637,25 +688,18 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm + 4,
     gap: SPACING.md,
   },
-  infoIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.primaryBg,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   infoContent: {
     flex: 1,
   },
   infoLabel: {
     fontSize: 16,
+    fontFamily: FONTS.family.regular,
     color: COLORS.textLight,
   },
   infoValue: {
     fontSize: FONTS.sizeMedium,
+    fontFamily: FONTS.family.semiBold,
     color: COLORS.text,
-    fontWeight: '600',
     marginTop: 2,
   },
   divider: {
@@ -674,8 +718,8 @@ const styles = StyleSheet.create({
   },
   deleteBtnText: {
     fontSize: FONTS.sizeMedium,
-    color: '#D32F2F',
-    fontWeight: '600',
+    fontFamily: FONTS.family.semiBold,
+    color: COLORS.danger,
   },
   // ═══ EDIT MODE ═══
   editHeader: {
@@ -696,12 +740,12 @@ const styles = StyleSheet.create({
   },
   editHeaderBtnText: {
     fontSize: FONTS.sizeSmall,
+    fontFamily: FONTS.family.semiBold,
     color: COLORS.textSecondary,
-    fontWeight: '600',
   },
   editHeaderTitle: {
     fontSize: FONTS.sizeLarge,
-    fontWeight: 'bold',
+    fontFamily: FONTS.family.bold,
     color: COLORS.text,
   },
   editScroll: {
@@ -712,6 +756,7 @@ const styles = StyleSheet.create({
   photoCardEdit: {
     alignItems: 'center',
     paddingVertical: SPACING.lg,
+    marginBottom: SPACING.md,
   },
   photoEdit: {
     width: 140,
@@ -724,8 +769,8 @@ const styles = StyleSheet.create({
   },
   photoHintEdit: {
     fontSize: FONTS.sizeSmall,
+    fontFamily: FONTS.family.semiBold,
     color: COLORS.primary,
-    fontWeight: '600',
   },
   // ─── Card internals (shared with add.tsx design) ───
   cardHeader: {
@@ -734,17 +779,9 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
     gap: SPACING.sm + 4,
   },
-  iconCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#FFF3E0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   sectionLabel: {
     fontSize: FONTS.sizeSmall,
-    fontWeight: '700',
+    fontFamily: FONTS.family.bold,
     color: COLORS.text,
     flex: 1,
   },
@@ -759,13 +796,14 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: FONTS.sizeMedium,
+    fontFamily: FONTS.family.regular,
     color: COLORS.text,
     paddingVertical: SPACING.md,
   },
   unitText: {
     fontSize: FONTS.sizeMedium,
+    fontFamily: FONTS.family.bold,
     color: COLORS.textSecondary,
-    fontWeight: '700',
   },
   // ─── Chips ───
   chipRow: {
@@ -773,75 +811,25 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: SPACING.sm,
   },
-  chip: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    paddingHorizontal: SPACING.md + 4,
-    minHeight: 56,
+  daysRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
     justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    ...CARD_SHADOW,
   },
-  chipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+  dayChip: {
+    minWidth: 58,
+    minHeight: TOUCH_TARGET.minHeight,
   },
-  chipText: {
-    fontSize: FONTS.sizeMedium,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  chipTextActive: {
-    color: COLORS.white,
-    fontWeight: 'bold',
-  },
-  timeChip: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 4,
-    minHeight: 64,
-    minWidth: 72,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    ...CARD_SHADOW,
-  },
-  timeChipEmoji: {
+  selectAllText: {
     fontSize: FONTS.sizeSmall,
-    textAlign: 'center',
-  },
-  timeChipSub: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-  timeChipSubActive: {
-    color: COLORS.white,
+    fontFamily: FONTS.family.semiBold,
+    color: COLORS.primary,
   },
   // ─── Save Button ───
   saveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    borderRadius: 16,
-    minHeight: TOUCH_TARGET.minHeight + 4,
     marginTop: SPACING.lg,
-    gap: SPACING.sm,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  saveBtnText: {
-    color: COLORS.white,
-    fontSize: FONTS.sizeLarge,
-    fontWeight: 'bold',
+    minHeight: TOUCH_TARGET.minHeight + 4,
+    borderRadius: 16,
   },
 });

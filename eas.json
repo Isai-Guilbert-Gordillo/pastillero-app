@@ -1,25 +1,37 @@
 {
   "cli": {
-    "version": ">= 3.0.0"
+    "version": ">= 3.0.0",
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "JAVA_VERSION": "17"
+      },
       "android": {
         "buildType": "apk",
-        "gradleCommand": ":app:assembleDebug"
+        "image": "latest"
       }
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "JAVA_VERSION": "17"
+      },
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "image": "latest"
       }
     },
     "production": {
+      "env": {
+        "JAVA_VERSION": "17"
+      },
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "image": "latest"
       }
     }
   }

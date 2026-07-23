@@ -1,31 +1,39 @@
 // ─── Tema Premium Médico · WCAG 2.1 · Gerontología Digital ───
 // Optimizado para usuarios 80+: alto contraste, touch targets 70px, tipografía gruesa
-// Paleta sofisticada: verde azulado profundo + coral cálido + gris perla
+// Paleta moderna: teal/esmeralda + índigo + coral, neutrales "slate"
 
 export const COLORS = {
-  primary: '#00695C',         // Verde Azulado Profundo — confianza médica
-  primaryLight: '#4DB6AC',    // Teal medio
-  primaryBg: '#E0F2F1',       // Teal muy claro
-  secondary: '#1565C0',       // Azul (enlaces)
-  secondaryLight: '#E3F2FD',
-  accent: '#FF8A65',          // Coral suave — iconos de medicamentos, calidez
+  primary: '#0D9488',         // Teal/Esmeralda — confianza médica, más vivo que el verde clásico
+  primaryDark: '#0F766E',     // Para gradientes / estado presionado
+  primaryLight: '#5EEAD4',    // Teal claro — acentos
+  primaryBg: '#ECFDF9',       // Teal muy claro — fondos suaves
+  secondary: '#4F46E5',       // Índigo — enlaces, información
+  secondaryLight: '#EEF2FF',
+  accent: '#FB7185',          // Coral/Rosa — iconos de medicamentos, calidez
+  accentDark: '#F43F5E',
   accentGold: '#C5A572',      // Dorado mate — alternativa de acento
   white: '#FFFFFF',
-  background: '#F8F9FA',      // Gris perla — limpieza clínica
+  background: '#F8FAFC',      // Slate-50 — limpieza clínica, ligeramente frío
   card: '#FFFFFF',
-  text: '#263238',            // Gris pizarra oscuro — máximo contraste
-  textSecondary: '#546E7A',   // Gris azulado medio
-  textLight: '#90A4AE',       // Gris claro para placeholders
-  border: '#E0E0E0',
-  danger: '#C62828',          // Rojo oscuro
-  dangerLight: '#FFEBEE',
-  success: '#00695C',
-  successLight: '#E0F2F1',
-  warning: '#F57C00',         // Naranja Intenso — próximas tomas / alertas
-  warningLight: '#FFF3E0',
+  text: '#1E293B',            // Slate-800 — máximo contraste sin ser negro puro
+  textSecondary: '#64748B',   // Slate-500
+  textLight: '#94A3B8',       // Slate-400 — placeholders
+  border: '#E2E8F0',          // Slate-200
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
+  success: '#059669',
+  successLight: '#ECFDF5',
+  warning: '#F59E0B',         // Ámbar — próximas tomas / alertas
+  warningLight: '#FFFBEB',
   warningBg: '#FFF8E1',
-  inputBg: '#F1F3F4',         // Gris perla para campos de entrada (capa interior)
-  cardShadow: '#000000',      // Para sombras consistentes
+  inputBg: '#F1F5F9',         // Slate-100 — campos de entrada
+  cardShadow: '#0F172A',      // Slate-900 — sombras con un toque de color en vez de negro puro
+};
+
+export const GRADIENTS = {
+  primary: ['#14B8A6', '#0D9488', '#0F766E'] as const,
+  accent: ['#FB7185', '#F43F5E'] as const,
+  alarm: ['#F59E0B', '#DC2626'] as const,
 };
 
 export const FONTS = {
@@ -35,6 +43,14 @@ export const FONTS = {
   sizeXLarge: 28,             // Encabezados de sección
   sizeTitle: 32,              // Títulos principales (Bold)
   sizeHero: 36,               // Tarjeta de alerta gigante
+  // Familia tipográfica Poppins (cargada en app/_layout.tsx vía @expo-google-fonts/poppins)
+  family: {
+    regular: 'Poppins_400Regular',
+    medium: 'Poppins_500Medium',
+    semiBold: 'Poppins_600SemiBold',
+    bold: 'Poppins_700Bold',
+    extraBold: 'Poppins_800ExtraBold',
+  },
 };
 
 export const SPACING = {
@@ -48,9 +64,9 @@ export const SPACING = {
 
 export const BORDER_RADIUS = {
   sm: 10,
-  md: 15,                    // Bordes redondeados 15px para inputs
-  lg: 20,
-  xl: 28,
+  md: 16,                    // Bordes redondeados para inputs/chips
+  lg: 22,
+  xl: 30,
   full: 999,
 };
 
@@ -58,4 +74,29 @@ export const BORDER_RADIUS = {
 export const TOUCH_TARGET = {
   minHeight: 70,
   minWidth: 70,
+};
+
+// ─── Sombras centralizadas (antes duplicadas por archivo) ───
+export const SHADOWS = {
+  card: {
+    shadowColor: COLORS.cardShadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  button: {
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  floating: {
+    shadowColor: COLORS.cardShadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    elevation: 8,
+  },
 };

@@ -1,37 +1,52 @@
+import { useAppAlert } from '@/components/AppAlert';
 import { useAuth } from '@/context/AuthContext';
-import { cancelNotificationsByIds } from '@/lib/notifications';
+import { cancelNotificationsByIds, cancelPersistentAlarm, snoozeAlarm } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
-import { BORDER_RADIUS, COLORS, FONTS, SPACING } from '@/lib/theme';
+import { BORDER_RADIUS, COLORS, FONTS, GRADIENTS, SPACING, TOUCH_TARGET } from '@/lib/theme';
 import { Medication } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Dimensions,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  Vibration,
-  View,
+    ActivityIndicator,
+    Dimensions,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    Vibration,
+    View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function AlarmScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { alert } = useAppAlert();
   const params = useLocalSearchParams<{ medicationId: string; scheduledAt: string }>();
   const [medication, setMedication] = useState<Medication | null>(null);
   const [loading, setLoading] = useState(true);
   const [stopping, setStopping] = useState(false);
-  
+  const [snoozing, setSnoozing] = useState(false);
+
   // Referencia para el sonido, para poder detenerlo síncronamente
   const soundRef = useRef<Audio.Sound | null>(null);
+
+  // Pulso del ícono de alarma — refuerza la urgencia
+  const pulse = useSharedValue(1);
+  useEffect(() => {
+    pulse.value = withRepeat(
+      withSequence(withTiming(1.1, { duration: 550 }), withTiming(1, { duration: 550 })),
+      -1,
+      true
+    );
+  }, []);
+  const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
 
   // Cargar datos del medicamento
   useEffect(() => {
@@ -68,9 +83,12 @@ export default function AlarmScreen() {
           interruptionModeIOS: InterruptionModeIOS.DoNotMix,
         });
 
-        // 2. Vibración continua INMEDIATA
-        // Patrón: espera 0ms, vibra 800ms, pausa 400ms...
-        Vibration.vibrate([0, 800, 400, 800, 400, 800], true);
+        // 2. Vibración AGRESIVA continua INMEDIATA
+        // Patrón largo y fuerte para que sea imposible ignorar
+        Vibration.vibrate(
+          [0, 1000, 200, 1000, 200, 1000, 200, 1500, 300, 1500, 300, 1500],
+          true
+        );
 
         // 3. Cargar sonido de alarma RUIDOSO en bucle
         // Usamos un archivo local para evitar latencia de red
@@ -79,7 +97,9 @@ export default function AlarmScreen() {
           { 
             shouldPlay: true, 
             isLooping: true, 
-            volume: 1.0 
+            volume: 1.0,
+            rate: 1.0,
+            shouldCorrectPitch: false,
           }
         );
 
@@ -92,8 +112,11 @@ export default function AlarmScreen() {
 
       } catch (error) {
         console.error('Error en motor de alarma:', error);
-        // Fallback: intentar vibrar de nuevo por si acaso falló algo antes
-        Vibration.vibrate([0, 500, 500], true);
+        // Fallback: vibración agresiva
+        Vibration.vibrate(
+          [0, 1000, 200, 1000, 200, 1000, 200, 1500, 300, 1500, 300, 1500],
+          true
+        );
       }
     };
 
@@ -109,15 +132,9 @@ export default function AlarmScreen() {
     };
   }, []);
 
-  // ─── Botón principal: DETENER TODO ───
-  const handleStopAlarm = async () => {
-    if (stopping) return;
-    setStopping(true);
-
-    // ══ PRIORIDAD 0 — Detención SÍNCRONA (lo que percibe el usuario) ══
+  // ─── Detención SÍNCRONA del sonido/vibración (compartida por ambos botones) ───
+  const stopSoundAndVibration = async () => {
     Vibration.cancel();
-    
-    // Detener audio expo-av
     if (soundRef.current) {
       try {
         await soundRef.current.stopAsync();
@@ -127,13 +144,38 @@ export default function AlarmScreen() {
       }
       soundRef.current = null;
     }
-
-    // Cancelar notificaciones del sistema
     Notifications.dismissAllNotificationsAsync().catch(() => {});
-
-    // Cancelar notificaciones futuras por IDs guardados
     if (medication?.notification_ids?.length) {
       cancelNotificationsByIds(medication.notification_ids);
+    }
+  };
+
+  // ─── Botón: Posponer 5 minutos ───
+  const handleSnooze = async () => {
+    if (snoozing || stopping) return;
+    setSnoozing(true);
+    await stopSoundAndVibration();
+    if (params.medicationId) {
+      await snoozeAlarm(
+        params.medicationId,
+        { medicationId: params.medicationId, type: 'ALARM', scheduledAt: params.scheduledAt || '' },
+        params.scheduledAt || undefined
+      );
+    }
+    router.replace('/(tabs)');
+  };
+
+  // ─── Botón principal: DETENER TODO ───
+  const handleStopAlarm = async () => {
+    if (stopping) return;
+    setStopping(true);
+
+    // ══ PRIORIDAD 0 — Detención SÍNCRONA (lo que percibe el usuario) ══
+    await stopSoundAndVibration();
+
+    // Cancelar TODOS los recordatorios persistentes de ESTA DOSIS
+    if (params.medicationId) {
+      cancelPersistentAlarm(params.medicationId, params.scheduledAt || undefined).catch(() => {});
     }
 
     // ══ PRIORIDAD 1 — Guardar en Supabase ══
@@ -173,7 +215,7 @@ export default function AlarmScreen() {
       router.replace('/(tabs)');
     } catch (e) {
       console.log('Error guardando en Supabase:', e);
-      Alert.alert(
+      alert(
         'Alarma detenida',
         'No se pudo la conexión para registrar la dosis. Pero la alarma se detuvo.',
         [
@@ -186,21 +228,22 @@ export default function AlarmScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <LinearGradient colors={GRADIENTS.alarm} style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.white} />
-        <Text style={{color: 'white', marginTop: 10}}>Cargando alarma...</Text>
-      </View>
+        <Text style={{ color: 'white', marginTop: 10, fontFamily: FONTS.family.medium }}>Cargando alarma...</Text>
+      </LinearGradient>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <LinearGradient colors={GRADIENTS.alarm} style={styles.container}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <View style={styles.content}>
         {/* Ícono de alarma pulsante */}
         <View style={styles.alarmIconContainer}>
-          <View style={styles.alarmIconOuter}>
+          <Animated.View style={[styles.alarmIconOuter, pulseStyle]}>
             <Ionicons name="alarm" size={80} color={COLORS.white} />
-          </View>
+          </Animated.View>
         </View>
 
         {/* Texto principal */}
@@ -247,38 +290,39 @@ export default function AlarmScreen() {
           )}
         </TouchableOpacity>
 
-        {/* Botón secundario — solo detener sin marcar */}
+        {/* Botón secundario — Posponer 5 minutos */}
         <TouchableOpacity
-          style={styles.dismissButton}
-          onPress={() => {
-            // Lógica simplificada de detención
-            if (soundRef.current) {
-              soundRef.current.stopAsync();
-              soundRef.current.unloadAsync();
-            }
-            Vibration.cancel();
-            Notifications.dismissAllNotificationsAsync().catch(() => {});
-            router.replace('/(tabs)');
-          }}
+          style={[styles.snoozeButton, (snoozing || stopping) && styles.stopButtonDisabled]}
+          onPress={handleSnooze}
           activeOpacity={0.7}
+          disabled={snoozing || stopping}
         >
-          <Text style={styles.dismissButtonText}>🔕 Solo detener sonido</Text>
+          {snoozing ? (
+            <ActivityIndicator size="small" color={COLORS.white} />
+          ) : (
+            <>
+              <Ionicons name="time-outline" size={26} color={COLORS.white} />
+              <Text style={styles.snoozeButtonText}>Posponer 5 minutos</Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#D32F2F',
     justifyContent: 'center',
     alignItems: 'center',
   },
   container: {
     flex: 1,
-    backgroundColor: '#D32F2F',
+  },
+  safeArea: {
+    flex: 1,
   },
   content: {
     flex: 1,
@@ -303,7 +347,7 @@ const styles = StyleSheet.create({
   // ─── Texto ───
   title: {
     fontSize: 36,
-    fontWeight: 'bold',
+    fontFamily: FONTS.family.extraBold,
     color: COLORS.white,
     textAlign: 'center',
     marginBottom: SPACING.lg,
@@ -327,17 +371,19 @@ const styles = StyleSheet.create({
   },
   medName: {
     fontSize: FONTS.sizeHero,
-    fontWeight: 'bold',
+    fontFamily: FONTS.family.extraBold,
     color: COLORS.white,
     textAlign: 'center',
   },
   medDose: {
     fontSize: FONTS.sizeLarge,
+    fontFamily: FONTS.family.medium,
     color: 'rgba(255,255,255,0.85)',
     marginTop: 4,
   },
   medTime: {
     fontSize: FONTS.sizeMedium,
+    fontFamily: FONTS.family.regular,
     color: 'rgba(255,255,255,0.7)',
     marginTop: 8,
   },
@@ -362,24 +408,33 @@ const styles = StyleSheet.create({
   },
   stopButtonText: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: '#D32F2F',
+    fontFamily: FONTS.family.extraBold,
+    color: COLORS.danger,
     marginTop: SPACING.sm,
   },
   stopButtonSub: {
     fontSize: FONTS.sizeMedium,
+    fontFamily: FONTS.family.medium,
     color: COLORS.textSecondary,
     marginTop: 4,
   },
-  // ─── Botón secundario ───
-  dismissButton: {
+  // ─── Botón secundario: Posponer ───
+  snoozeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
     marginTop: SPACING.lg,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.xl,
+    minHeight: TOUCH_TARGET.minHeight,
+    width: '100%',
+    borderRadius: BORDER_RADIUS.lg,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
-  dismissButtonText: {
+  snoozeButtonText: {
     fontSize: FONTS.sizeLarge,
-    color: 'rgba(255,255,255,0.8)',
-    fontWeight: '600',
+    fontFamily: FONTS.family.bold,
+    color: COLORS.white,
   },
 });

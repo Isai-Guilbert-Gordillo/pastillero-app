@@ -1,16 +1,21 @@
-import { useAuth } from '@/context/AuthContext';
-import { computeDoseDates, scheduleMedicationNotifications } from '@/lib/notifications';
+import { useAppAlert } from '@/components/AppAlert';
+import PatientBanner from '@/components/PatientBanner';
+import Button from '@/components/ui/Button';
+import Card from '@/components/ui/Card';
+import Chip from '@/components/ui/Chip';
+import IconBadge from '@/components/ui/IconBadge';
+import WebTimePicker from '@/components/WebTimePicker';
+import { useCaregiver } from '@/context/CaregiverContext';
+import { computeDoseDates, scheduleMedicationNotifications, scheduleNativeAlarms } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
-import { COLORS, FONTS, SPACING, TOUCH_TARGET } from '@/lib/theme';
+import { BORDER_RADIUS, COLORS, FONTS, SPACING, TOUCH_TARGET } from '@/lib/theme';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -21,6 +26,7 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 const FREQUENCY_OPTIONS = [
   { label: 'Cada 4h', value: '4' },
@@ -66,18 +72,10 @@ const DAYS_OF_WEEK = [
   { label: 'D', full: 'Domingo', value: 'sun' },
 ];
 
-// ─── Sombra reutilizable para tarjetas ───
-const CARD_SHADOW = {
-  shadowColor: COLORS.cardShadow,
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.05,
-  shadowRadius: 8,
-  elevation: 3,
-};
-
 export default function AddMedicationScreen() {
-  const { user } = useAuth();
+  const { activePatientId, isViewingOther, activePatientLabel } = useCaregiver();
   const router = useRouter();
+  const { alert } = useAppAlert();
   const [name, setName] = useState('');
   const [doseMg, setDoseMg] = useState('');
   const [frequencyHours, setFrequencyHours] = useState('8');
@@ -91,13 +89,32 @@ export default function AddMedicationScreen() {
     'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun',
   ]);
 
+  // Limpia el formulario — se llama tras guardar y cada vez que se entra a esta pestaña,
+  // porque expo-router mantiene la pantalla montada al cambiar de tab (si no, quedan
+  // los datos del medicamento anterior).
+  const resetForm = () => {
+    setName('');
+    setDoseMg('');
+    setFrequencyHours('8');
+    setStartTime('08:00');
+    setImageUri(null);
+    setCustomFrequency('');
+    setSelectedDays(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      resetForm();
+    }, [])
+  );
+
   const pickImage = async (fromCamera: boolean) => {
     let result: ImagePicker.ImagePickerResult;
 
     if (fromCamera) {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permiso necesario', 'Necesitamos acceso a la cámara para tomar fotos.');
+        alert('Permiso necesario', 'Necesitamos acceso a la cámara para tomar fotos.');
         return;
       }
       result = await ImagePicker.launchCameraAsync({
@@ -109,7 +126,7 @@ export default function AddMedicationScreen() {
     } else {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permiso necesario', 'Necesitamos acceso a tu galería.');
+        alert('Permiso necesario', 'Necesitamos acceso a tu galería.');
         return;
       }
       result = await ImagePicker.launchImageLibraryAsync({
@@ -126,7 +143,7 @@ export default function AddMedicationScreen() {
   };
 
   const showImageOptions = () => {
-    Alert.alert('Seleccionar foto', '¿De dónde quieres obtener la foto?', [
+    alert('Seleccionar foto', '¿De dónde quieres obtener la foto?', [
       { text: 'Cámara', onPress: () => pickImage(true) },
       { text: 'Galería', onPress: () => pickImage(false) },
       { text: 'Cancelar', style: 'cancel' },
@@ -180,7 +197,7 @@ export default function AddMedicationScreen() {
 
   const uploadImage = async (uri: string): Promise<string | null> => {
     try {
-      const fileName = `${user!.id}/${Date.now()}.jpg`;
+      const fileName = `${activePatientId}/${Date.now()}.jpg`;
       const response = await fetch(uri);
       const blob = await response.blob();
 
@@ -209,24 +226,49 @@ export default function AddMedicationScreen() {
     }
   };
 
-  const handleSave = async () => {
-    if (!name.trim()) {
-      Alert.alert('Error', 'Ingresa el nombre del medicamento');
-      return;
+  const validateForm = (): string | null => {
+    if (!name.trim()) return 'Ingresa el nombre del medicamento';
+    if (!doseMg || isNaN(Number(doseMg)) || Number(doseMg) <= 0) return 'Ingresa una dosis válida en mg';
+    const finalFrequency = frequencyHours === 'custom' ? customFrequency : frequencyHours;
+    if (!finalFrequency || isNaN(Number(finalFrequency)) || Number(finalFrequency) <= 0) {
+      return 'Selecciona cada cuántas horas';
     }
-    if (!doseMg || isNaN(Number(doseMg)) || Number(doseMg) <= 0) {
-      Alert.alert('Error', 'Ingresa una dosis válida en mg');
+    if (selectedDays.length === 0) return 'Selecciona al menos un día de la semana';
+    return null;
+  };
+
+  // Resumen en lenguaje llano antes de guardar — para atrapar un dedazo
+  // (ej. tocar "Cada 4h" en vez de "Cada 8h") antes de que se programe la alarma.
+  const confirmAndSave = () => {
+    const validationError = validateForm();
+    if (validationError) {
+      alert('Error', validationError);
       return;
     }
     const finalFrequency = frequencyHours === 'custom' ? customFrequency : frequencyHours;
-    if (!finalFrequency || isNaN(Number(finalFrequency)) || Number(finalFrequency) <= 0) {
-      Alert.alert('Error', 'Selecciona cada cuántas horas');
+    const daysLabel =
+      selectedDays.length === 7
+        ? 'Todos los días'
+        : DAYS_OF_WEEK.filter((d) => selectedDays.includes(d.value)).map((d) => d.full).join(', ');
+
+    alert(
+      'Confirma los datos',
+      `${name.trim()} — ${doseMg} mg\nCada ${finalFrequency} horas, empezando a las ${formatTime12h(startTime)}\nDías: ${daysLabel}`,
+      [
+        { text: 'Revisar', style: 'cancel' },
+        { text: 'Guardar', onPress: handleSave },
+      ]
+    );
+  };
+
+  const handleSave = async () => {
+    if (!activePatientId) return;
+    const validationError = validateForm();
+    if (validationError) {
+      alert('Error', validationError);
       return;
     }
-    if (selectedDays.length === 0) {
-      Alert.alert('Error', 'Selecciona al menos un día de la semana');
-      return;
-    }
+    const finalFrequency = frequencyHours === 'custom' ? customFrequency : frequencyHours;
 
     setSaving(true);
 
@@ -238,7 +280,7 @@ export default function AddMedicationScreen() {
     const { data, error } = await supabase
       .from('medications')
       .insert({
-        user_id: user!.id,
+        user_id: activePatientId,
         name: name.trim(),
         photo_url: photoUrl,
         dose_mg: Number(doseMg),
@@ -251,14 +293,30 @@ export default function AddMedicationScreen() {
       .single();
 
     if (error) {
-      Alert.alert('Error', 'No se pudo guardar el medicamento. Intenta de nuevo.');
+      alert('Error', 'No se pudo guardar el medicamento. Intenta de nuevo.');
       console.error('Insert error:', error);
       setSaving(false);
       return;
     }
 
-    if (data) {
-      // Programar notificaciones y guardar IDs en la tabla medications
+    if (!data) {
+      setSaving(false);
+      alert('Listo', `"${name.trim()}" se agregó correctamente.`, [
+        { text: 'OK', onPress: () => router.push('/(tabs)') },
+      ]);
+      return;
+    }
+
+    // Las alarmas son locales al teléfono que las programa. Si estamos actuando
+    // como cuidador (en el teléfono de otra persona), programarlas aquí sonaría
+    // en ESTE teléfono, no en el de esa persona — así que las omitimos y
+    // avisamos claramente en su lugar.
+    let alarmResult: { attempted: number; succeeded: number; errors: string[] } = {
+      attempted: 0,
+      succeeded: 0,
+      errors: [],
+    };
+    if (!isViewingOther) {
       const notifIds = await scheduleMedicationNotifications(data);
       if (notifIds.length > 0) {
         await supabase
@@ -266,28 +324,51 @@ export default function AddMedicationScreen() {
           .update({ notification_ids: notifIds })
           .eq('id', data.id);
       }
-      const doseDates = computeDoseDates(data);
+      // Alarma nativa del teléfono — suena aunque la app esté cerrada
+      alarmResult = await scheduleNativeAlarms(data);
+    }
 
-      // Insertar primer registro de dosis con scheduled_at = primera toma real
-      if (doseDates.length > 0) {
-        await supabase.from('dose_records').insert({
-          medication_id: data.id,
-          user_id: user!.id,
-          scheduled_at: doseDates[0].toISOString(),
-          taken: null, // pendiente
-          responded_at: null,
-        });
-      }
+    const doseDates = computeDoseDates(data);
+
+    // Insertar primer registro de dosis con scheduled_at = primera toma real
+    if (doseDates.length > 0) {
+      await supabase.from('dose_records').insert({
+        medication_id: data.id,
+        user_id: activePatientId,
+        scheduled_at: doseDates[0].toISOString(),
+        taken: null, // pendiente
+        responded_at: null,
+      });
     }
 
     setSaving(false);
-    Alert.alert('Listo', `"${name.trim()}" se agregó correctamente.`, [
+
+    if (isViewingOther) {
+      alert(
+        '✅ Guardado, pero falta un paso',
+        `"${name.trim()}" ya quedó en la cuenta de ${activePatientLabel}.\n\nLa alarma NO va a sonar hasta que esa persona abra PastilleroApp en su propio teléfono al menos una vez — solo ahí se programa el sonido.`,
+        [{ text: 'Entendido', onPress: () => router.push('/(tabs)') }]
+      );
+      return;
+    }
+
+    if (alarmResult.attempted > 0 && alarmResult.succeeded === 0) {
+      alert(
+        'Medicamento guardado, pero...',
+        `No se pudo crear la alarma en el Reloj de tu teléfono.\n\nDetalle: ${alarmResult.errors[0] ?? 'error desconocido'}\n\nLas notificaciones de la app sí quedaron programadas.`,
+        [{ text: 'OK', onPress: () => router.push('/(tabs)') }]
+      );
+      return;
+    }
+
+    alert('Listo', `"${name.trim()}" se agregó correctamente.`, [
       { text: 'OK', onPress: () => router.push('/(tabs)') },
     ]);
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <PatientBanner />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
@@ -298,188 +379,177 @@ export default function AddMedicationScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* ─── Header ─── */}
-          <Text style={styles.title}>Agregar Medicamento</Text>
-          <Text style={styles.subtitle}>Completa los datos de tu medicina</Text>
+          <Animated.View entering={FadeInDown.duration(350)}>
+            <Text style={styles.title}>Agregar Medicamento</Text>
+            <Text style={styles.subtitle}>Completa los datos de tu medicina</Text>
+          </Animated.View>
 
           {/* ─── Photo Card ─── */}
-          <TouchableOpacity
-            style={[styles.sectionCard, styles.photoCard]}
-            onPress={showImageOptions}
-            activeOpacity={0.7}
-          >
-            {imageUri ? (
-              <Image source={{ uri: imageUri }} style={styles.photo} contentFit="cover" />
-            ) : (
-              <View style={styles.photoPlaceholder}>
-                <View style={styles.cameraCircle}>
-                  <Ionicons name="camera" size={40} color={COLORS.primary} />
-                </View>
-                <Text style={styles.photoTitle}>Agregar foto</Text>
-                <Text style={styles.photoHint}>Toca para tomar o elegir una foto</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          <Animated.View entering={FadeInDown.duration(350).delay(40)}>
+            <TouchableOpacity onPress={showImageOptions} activeOpacity={0.7}>
+              <Card style={styles.photoCard}>
+                {imageUri ? (
+                  <Image source={{ uri: imageUri }} style={styles.photo} contentFit="cover" />
+                ) : (
+                  <View style={styles.photoPlaceholder}>
+                    <IconBadge name="camera" color={COLORS.primary} backgroundColor={COLORS.primaryBg} size={80} iconSize={38} />
+                    <Text style={styles.photoTitle}>Agregar foto</Text>
+                    <Text style={styles.photoHint}>Toca para tomar o elegir una foto</Text>
+                  </View>
+                )}
+              </Card>
+            </TouchableOpacity>
+          </Animated.View>
 
           {/* ─── Nombre Card ─── */}
-          <View style={styles.sectionCard}>
-            <View style={styles.cardHeader}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="medical" size={22} color={COLORS.accent} />
+          <Animated.View entering={FadeInDown.duration(350).delay(80)}>
+            <Card style={styles.sectionCard}>
+              <View style={styles.cardHeader}>
+                <IconBadge name="medical" color={COLORS.accent} backgroundColor="#FFE4E8" />
+                <Text style={styles.sectionLabel}>Nombre del medicamento</Text>
               </View>
-              <Text style={styles.sectionLabel}>Nombre del medicamento</Text>
-            </View>
-            <View style={styles.inputInner}>
-              <TextInput
-                style={styles.input}
-                placeholder="Ej: Metformina"
-                placeholderTextColor={COLORS.textLight}
-                value={name}
-                onChangeText={setName}
-                autoCapitalize="words"
-              />
-            </View>
-          </View>
+              <View style={styles.inputInner}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ej: Metformina"
+                  placeholderTextColor={COLORS.textLight}
+                  value={name}
+                  onChangeText={setName}
+                  autoCapitalize="words"
+                />
+              </View>
+            </Card>
+          </Animated.View>
 
           {/* ─── Dosis Card ─── */}
-          <View style={styles.sectionCard}>
-            <View style={styles.cardHeader}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="fitness" size={22} color={COLORS.accent} />
+          <Animated.View entering={FadeInDown.duration(350).delay(120)}>
+            <Card style={styles.sectionCard}>
+              <View style={styles.cardHeader}>
+                <IconBadge name="fitness" color={COLORS.accent} backgroundColor="#FFE4E8" />
+                <Text style={styles.sectionLabel}>Dosis</Text>
               </View>
-              <Text style={styles.sectionLabel}>Dosis</Text>
-            </View>
-            <View style={styles.inputInner}>
-              <TextInput
-                style={styles.input}
-                placeholder="Ej: 500"
-                placeholderTextColor={COLORS.textLight}
-                value={doseMg}
-                onChangeText={setDoseMg}
-                keyboardType="numeric"
-              />
-              <Text style={styles.unitText}>mg</Text>
-            </View>
-          </View>
+              <View style={styles.inputInner}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ej: 500"
+                  placeholderTextColor={COLORS.textLight}
+                  value={doseMg}
+                  onChangeText={setDoseMg}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.unitText}>mg</Text>
+              </View>
+            </Card>
+          </Animated.View>
 
           {/* ─── Frecuencia Card ─── */}
-          <View style={styles.sectionCard}>
-            <View style={styles.cardHeader}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="repeat" size={22} color={COLORS.accent} />
+          <Animated.View entering={FadeInDown.duration(350).delay(160)}>
+            <Card style={styles.sectionCard}>
+              <View style={styles.cardHeader}>
+                <IconBadge name="repeat" color={COLORS.accent} backgroundColor="#FFE4E8" />
+                <Text style={styles.sectionLabel}>¿Con qué frecuencia?</Text>
               </View>
-              <Text style={styles.sectionLabel}>¿Con qué frecuencia?</Text>
-            </View>
-            <View style={styles.freqRow}>
-              {FREQUENCY_OPTIONS.map((opt) => {
-                const isActive =
-                  opt.value === 'custom'
-                    ? frequencyHours === 'custom'
-                    : frequencyHours === opt.value;
-                return (
-                  <TouchableOpacity
-                    key={opt.value}
-                    style={[styles.freqChip, isActive && styles.freqChipActive]}
-                    onPress={() => handleSelectFrequency(opt.value)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.freqChipText, isActive && styles.freqChipTextActive]}>
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            {frequencyHours === 'custom' && (
-              <View style={styles.customInputRow}>
-                <View style={[styles.inputInner, { flex: 1 }]}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Ej: 3"
-                    placeholderTextColor={COLORS.textLight}
-                    value={customFrequency}
-                    onChangeText={setCustomFrequency}
-                    keyboardType="numeric"
-                  />
-                  <Text style={styles.unitText}>horas</Text>
+              <View style={styles.chipRow}>
+                {FREQUENCY_OPTIONS.map((opt) => {
+                  const isActive =
+                    opt.value === 'custom'
+                      ? frequencyHours === 'custom'
+                      : frequencyHours === opt.value;
+                  return (
+                    <Chip
+                      key={opt.value}
+                      label={opt.label}
+                      selected={isActive}
+                      onPress={() => handleSelectFrequency(opt.value)}
+                      compact
+                    />
+                  );
+                })}
+              </View>
+              {frequencyHours === 'custom' && (
+                <View style={styles.customInputRow}>
+                  <View style={[styles.inputInner, { flex: 1 }]}>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Ej: 3"
+                      placeholderTextColor={COLORS.textLight}
+                      value={customFrequency}
+                      onChangeText={setCustomFrequency}
+                      keyboardType="numeric"
+                    />
+                    <Text style={styles.unitText}>horas</Text>
+                  </View>
                 </View>
-              </View>
-            )}
-          </View>
+              )}
+            </Card>
+          </Animated.View>
 
           {/* ─── Hora de inicio Card ─── */}
-          <View style={styles.sectionCard}>
-            <View style={styles.cardHeader}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="time" size={22} color={COLORS.accent} />
+          <Animated.View entering={FadeInDown.duration(350).delay(200)}>
+            <Card style={styles.sectionCard}>
+              <View style={styles.cardHeader}>
+                <IconBadge name="time" color={COLORS.accent} backgroundColor="#FFE4E8" />
+                <Text style={styles.sectionLabel}>¿A qué hora empieza?</Text>
               </View>
-              <Text style={styles.sectionLabel}>¿A qué hora empieza?</Text>
-            </View>
-            <View style={styles.timeRow}>
-              {TIME_OPTIONS.map((opt) => {
-                const presetValues = ['06:00', '08:00', '13:00', '20:00', '22:00'];
-                const isCustomTime = !presetValues.includes(startTime);
-                const isActive =
-                  opt.value === 'custom' ? isCustomTime : startTime === opt.value;
-                return (
-                  <TouchableOpacity
-                    key={opt.value}
-                    style={[styles.timeChip, isActive && styles.timeChipActive]}
-                    onPress={() => handleSelectTime(opt.value)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.timeChipEmoji}>{opt.label}</Text>
-                    <Text style={[styles.timeChipSub, isActive && styles.timeChipSubActive]}>
-                      {opt.value === 'custom' && isActive ? formatTime12h(startTime) : opt.sub}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+              <View style={styles.chipRow}>
+                {TIME_OPTIONS.map((opt) => {
+                  const presetValues = ['06:00', '08:00', '13:00', '20:00', '22:00'];
+                  const isCustomTime = !presetValues.includes(startTime);
+                  const isActive =
+                    opt.value === 'custom' ? isCustomTime : startTime === opt.value;
+                  return (
+                    <Chip
+                      key={opt.value}
+                      emoji={opt.label}
+                      label=""
+                      subLabel={opt.value === 'custom' && isActive ? formatTime12h(startTime) : opt.sub}
+                      selected={isActive}
+                      onPress={() => handleSelectTime(opt.value)}
+                    />
+                  );
+                })}
+              </View>
 
-            {/* Confirmación amigable de horario */}
-            <View style={styles.periodConfirm}>
-              <Text style={styles.periodConfirmText}>{getPeriodLabel(startTime)}</Text>
-              <Text style={styles.periodConfirmTime}>Primera toma: {formatTime12h(startTime)}</Text>
-            </View>
-          </View>
+              {/* Confirmación amigable de horario */}
+              <View style={styles.periodConfirm}>
+                <Text style={styles.periodConfirmText}>{getPeriodLabel(startTime)}</Text>
+                <Text style={styles.periodConfirmTime}>Primera toma: {formatTime12h(startTime)}</Text>
+              </View>
+            </Card>
+          </Animated.View>
 
           {/* ─── Días de la Semana Card ─── */}
-          <View style={styles.sectionCard}>
-            <View style={styles.cardHeader}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="calendar" size={22} color={COLORS.accent} />
+          <Animated.View entering={FadeInDown.duration(350).delay(240)}>
+            <Card style={styles.sectionCard}>
+              <View style={styles.cardHeader}>
+                <IconBadge name="calendar" color={COLORS.accent} backgroundColor="#FFE4E8" />
+                <Text style={styles.sectionLabel}>¿Qué días?</Text>
+                <TouchableOpacity onPress={selectAllDays} activeOpacity={0.7}>
+                  <Text style={styles.selectAllText}>
+                    {selectedDays.length === 7 ? 'Quitar todos' : 'Todos los días'}
+                  </Text>
+                </TouchableOpacity>
               </View>
-              <Text style={styles.sectionLabel}>¿Qué días?</Text>
-              <TouchableOpacity onPress={selectAllDays} activeOpacity={0.7}>
-                <Text style={styles.selectAllText}>
-                  {selectedDays.length === 7 ? 'Quitar todos' : 'Todos los días'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.daysRow}>
-              {DAYS_OF_WEEK.map((day) => {
-                const isActive = selectedDays.includes(day.value);
-                return (
-                  <TouchableOpacity
-                    key={day.value}
-                    style={[styles.dayChip, isActive && styles.dayChipActive]}
-                    onPress={() => toggleDay(day.value)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.dayChipText, isActive && styles.dayChipTextActive]}>
-                      {day.label}
-                    </Text>
-                    <Text style={[styles.dayChipFull, isActive && styles.dayChipFullActive]}>
-                      {day.full}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
+              <View style={styles.daysRow}>
+                {DAYS_OF_WEEK.map((day) => {
+                  const isActive = selectedDays.includes(day.value);
+                  return (
+                    <Chip
+                      key={day.value}
+                      label={day.label}
+                      subLabel={day.full}
+                      selected={isActive}
+                      onPress={() => toggleDay(day.value)}
+                      style={styles.dayChip}
+                    />
+                  );
+                })}
+              </View>
+            </Card>
+          </Animated.View>
 
-          {/* ─── Native Time Picker (Android/iOS) ─── */}
-          {showTimePicker && (
+          {/* ─── Time Picker: nativo en Android/iOS, propio en web ─── */}
+          {showTimePicker && Platform.OS !== 'web' && (
             <DateTimePicker
               value={tempTime}
               mode="time"
@@ -488,23 +558,26 @@ export default function AddMedicationScreen() {
               onChange={onTimePickerChange}
             />
           )}
+          {Platform.OS === 'web' && (
+            <WebTimePicker
+              visible={showTimePicker}
+              initialTime={startTime}
+              onCancel={() => setShowTimePicker(false)}
+              onConfirm={(time24) => {
+                setShowTimePicker(false);
+                setStartTime(time24);
+              }}
+            />
+          )}
 
           {/* ─── Save Button ─── */}
-          <TouchableOpacity
-            style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-            onPress={handleSave}
-            disabled={saving}
-            activeOpacity={0.7}
-          >
-            {saving ? (
-              <ActivityIndicator color={COLORS.white} size="large" />
-            ) : (
-              <>
-                <Ionicons name="checkmark-circle" size={28} color={COLORS.white} />
-                <Text style={styles.saveButtonText}>Guardar Medicamento</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          <Button
+            title="Guardar Medicamento"
+            icon="checkmark-circle"
+            onPress={confirmAndSave}
+            loading={saving}
+            style={styles.saveButton}
+          />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -523,22 +596,19 @@ const styles = StyleSheet.create({
   // ─── Header ───
   title: {
     fontSize: FONTS.sizeXLarge,
-    fontWeight: 'bold',
+    fontFamily: FONTS.family.bold,
     color: COLORS.primary,
     marginBottom: 4,
   },
   subtitle: {
     fontSize: FONTS.sizeMedium,
+    fontFamily: FONTS.family.regular,
     color: COLORS.textSecondary,
     marginBottom: SPACING.lg,
   },
-  // ─── Section Card (tarjeta blanca con sombra) ───
+  // ─── Section Card ───
   sectionCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: SPACING.lg,
     marginBottom: SPACING.md,
-    ...CARD_SHADOW,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -546,17 +616,9 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
     gap: SPACING.sm + 4,
   },
-  iconCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#FFF3E0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   sectionLabel: {
     fontSize: FONTS.sizeSmall,
-    fontWeight: '700',
+    fontFamily: FONTS.family.bold,
     color: COLORS.text,
     flex: 1,
   },
@@ -564,6 +626,7 @@ const styles = StyleSheet.create({
   photoCard: {
     alignItems: 'center',
     paddingVertical: SPACING.xl,
+    marginBottom: SPACING.md,
   },
   photo: {
     width: 180,
@@ -572,25 +635,17 @@ const styles = StyleSheet.create({
   },
   photoPlaceholder: {
     alignItems: 'center',
-  },
-  cameraCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: COLORS.primaryBg,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
+    gap: SPACING.sm,
   },
   photoTitle: {
     fontSize: FONTS.sizeMedium,
-    fontWeight: 'bold',
+    fontFamily: FONTS.family.bold,
     color: COLORS.primary,
   },
   photoHint: {
     fontSize: FONTS.sizeSmall,
+    fontFamily: FONTS.family.regular,
     color: COLORS.textLight,
-    marginTop: 4,
   },
   // ─── Input interior (capa gris dentro de tarjeta blanca) ───
   inputInner: {
@@ -604,81 +659,21 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: FONTS.sizeMedium,
+    fontFamily: FONTS.family.regular,
     color: COLORS.text,
     paddingVertical: SPACING.md,
   },
   unitText: {
     fontSize: FONTS.sizeMedium,
+    fontFamily: FONTS.family.bold,
     color: COLORS.textSecondary,
-    fontWeight: '700',
   },
-  // ─── Frequency chips ───
-  freqRow: {
+  // ─── Chips ───
+  chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: SPACING.sm,
   },
-  freqChip: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    paddingHorizontal: SPACING.md + 4,
-    minHeight: 56,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    ...CARD_SHADOW,
-  },
-  freqChipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  freqChipText: {
-    fontSize: FONTS.sizeMedium,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  freqChipTextActive: {
-    color: COLORS.white,
-    fontWeight: 'bold',
-  },
-  // ─── Time chips ───
-  timeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.sm,
-  },
-  timeChip: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 4,
-    minHeight: 64,
-    minWidth: 72,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    ...CARD_SHADOW,
-  },
-  timeChipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  timeChipEmoji: {
-    fontSize: FONTS.sizeSmall,
-    textAlign: 'center',
-  },
-  timeChipSub: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-  timeChipSubActive: {
-    color: COLORS.white,
-  },
-  // ─── Custom frequency input ───
   customInputRow: {
     marginTop: SPACING.sm,
   },
@@ -690,82 +685,36 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   dayChip: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    paddingVertical: SPACING.sm + 2,
-    paddingHorizontal: SPACING.sm + 2,
     minWidth: 58,
-    minHeight: 64,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    ...CARD_SHADOW,
-  },
-  dayChipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  dayChipText: {
-    fontSize: FONTS.sizeMedium,
-    fontWeight: 'bold',
-    color: COLORS.textSecondary,
-  },
-  dayChipTextActive: {
-    color: COLORS.white,
-  },
-  dayChipFull: {
-    fontSize: 11,
-    color: COLORS.textLight,
-    marginTop: 2,
-  },
-  dayChipFullActive: {
-    color: COLORS.white,
+    minHeight: TOUCH_TARGET.minHeight,
   },
   selectAllText: {
     fontSize: FONTS.sizeSmall,
-    fontWeight: '600',
+    fontFamily: FONTS.family.semiBold,
     color: COLORS.primary,
   },
   // ─── Save Button ───
   saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    borderRadius: 16,
-    minHeight: TOUCH_TARGET.minHeight + 4,
     marginTop: SPACING.lg,
-    gap: SPACING.sm,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  saveButtonDisabled: {
-    opacity: 0.7,
-  },
-  saveButtonText: {
-    color: COLORS.white,
-    fontSize: FONTS.sizeLarge,
-    fontWeight: 'bold',
+    minHeight: TOUCH_TARGET.minHeight + 4,
+    borderRadius: 16,
   },
   // ─── Period confirmation ───
   periodConfirm: {
     marginTop: SPACING.md,
     backgroundColor: COLORS.primaryBg,
-    borderRadius: 12,
+    borderRadius: BORDER_RADIUS.md,
     padding: SPACING.md,
     alignItems: 'center',
   },
   periodConfirmText: {
     fontSize: FONTS.sizeMedium,
-    fontWeight: '600',
+    fontFamily: FONTS.family.semiBold,
     color: COLORS.primary,
   },
   periodConfirmTime: {
     fontSize: FONTS.sizeSmall,
+    fontFamily: FONTS.family.regular,
     color: COLORS.textSecondary,
     marginTop: 4,
   },

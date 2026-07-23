@@ -94,8 +94,11 @@ export async function startAlarm(): Promise<void> {
       }
     }
 
-    // Vibración continua como respaldo para Expo Go
-    Vibration.vibrate([0, 500, 300, 500, 300, 500, 300, 500], true);
+    // Vibración AGRESIVA continua — patrón largo y fuerte para abuelas
+    Vibration.vibrate(
+      [0, 1000, 200, 1000, 200, 1000, 200, 1500, 300, 1500, 300, 1500],
+      true
+    );
 
     console.log('🔔 Alarma iniciada');
   } catch (e) {

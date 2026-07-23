@@ -6,12 +6,17 @@ import {
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import { useAuth } from '@/context/AuthContext';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useAppAlert } from '@/components/AppAlert';
+import PatientBanner from '@/components/PatientBanner';
+import Card from '@/components/ui/Card';
+import ScreenHeader from '@/components/ui/ScreenHeader';
+import { useCaregiver } from '@/context/CaregiverContext';
+import { reconcileDoseRecords } from '@/lib/doseSync';
 import { supabase } from '@/lib/supabase';
 import { COLORS, FONTS, SPACING, BORDER_RADIUS, TOUCH_TARGET } from '@/lib/theme';
 import { DoseRecord } from '@/lib/types';
@@ -20,19 +25,37 @@ interface DoseWithMedName extends DoseRecord {
   medication_name?: string;
 }
 
+type FilterKey = 'all' | 'pending' | 'taken' | 'skipped';
+
+const FILTERS: { key: FilterKey; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'all', label: 'Todos', icon: 'apps' },
+  { key: 'pending', label: 'Pendientes', icon: 'help-circle' },
+  { key: 'taken', label: 'Tomadas', icon: 'thumbs-up' },
+  { key: 'skipped', label: 'No tomadas', icon: 'close-circle' },
+];
+
 export default function HistoryScreen() {
-  const { user } = useAuth();
+  const { activePatientId } = useCaregiver();
+  const { alert } = useAppAlert();
   const [records, setRecords] = useState<DoseWithMedName[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<FilterKey>('all');
+
+  const filteredRecords = records.filter((r) => {
+    if (filter === 'pending') return r.taken === null;
+    if (filter === 'taken') return r.taken === true;
+    if (filter === 'skipped') return r.taken === false;
+    return true;
+  });
 
   const fetchRecords = async () => {
-    if (!user) return;
+    if (!activePatientId) return;
 
     const { data, error } = await supabase
       .from('dose_records')
       .select('*, medications(name)')
-      .eq('user_id', user.id)
+      .eq('user_id', activePatientId)
       .order('scheduled_at', { ascending: false })
       .limit(50);
 
@@ -50,8 +73,12 @@ export default function HistoryScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      fetchRecords();
-    }, [user])
+      if (activePatientId) {
+        reconcileDoseRecords(activePatientId)
+          .catch((e) => console.log('Error reconciliando dosis:', e))
+          .finally(fetchRecords);
+      }
+    }, [activePatientId])
   );
 
   const onRefresh = async () => {
@@ -70,11 +97,29 @@ export default function HistoryScreen() {
       .eq('id', record.id);
 
     if (error) {
-      Alert.alert('Error', 'No se pudo actualizar el registro.');
+      alert('Error', 'No se pudo actualizar el registro.');
       console.error('Update error:', error);
     } else {
       fetchRecords();
     }
+  };
+
+  // Permite corregir un registro que ya se marcó por error (ej. un toque
+  // accidental en "Ya la tomé"), sin tener que dejarlo mal para siempre.
+  const handleCorrectDose = (record: DoseWithMedName) => {
+    const buttons = [];
+    if (record.taken !== true) {
+      buttons.push({ text: 'Marcar como tomada', onPress: () => handleMarkDose(record, true) });
+    }
+    if (record.taken !== false) {
+      buttons.push({ text: 'Marcar como no tomada', onPress: () => handleMarkDose(record, false) });
+    }
+    buttons.push({ text: 'Cancelar', style: 'cancel' as const });
+    alert(
+      'Corregir registro',
+      `${record.medication_name} — ${formatDateTime(record.scheduled_at)}`,
+      buttons
+    );
   };
 
   const formatDateTime = (isoString: string): string => {
@@ -111,130 +156,123 @@ export default function HistoryScreen() {
     };
   };
 
-  const renderRecord = ({ item }: { item: DoseWithMedName }) => {
+  const renderRecord = ({ item, index }: { item: DoseWithMedName; index: number }) => {
     const status = getStatusInfo(item);
 
     return (
-      <View style={[styles.card, { borderLeftColor: status.color, borderLeftWidth: 5 }]}>
-        <View style={styles.cardTop}>
-          <View style={[styles.statusBadge, { backgroundColor: status.bgColor }]}>
-            <Ionicons name={status.icon} size={22} color={status.color} />
-            <Text style={[styles.statusText, { color: status.color }]}>{status.text}</Text>
+      <Animated.View entering={FadeInDown.delay(Math.min(index, 8) * 60).duration(350)}>
+        <Card style={[styles.card, { borderLeftColor: status.color, borderLeftWidth: 5 }]}>
+          <View style={styles.cardTop}>
+            <View style={[styles.statusBadge, { backgroundColor: status.bgColor }]}>
+              <Ionicons name={status.icon} size={22} color={status.color} />
+              <Text style={[styles.statusText, { color: status.color }]}>{status.text}</Text>
+            </View>
+            <Text style={styles.dateText}>{formatDateTime(item.scheduled_at)}</Text>
           </View>
-          <Text style={styles.dateText}>{formatDateTime(item.scheduled_at)}</Text>
-        </View>
 
-        <Text style={styles.medName}>💊 {item.medication_name}</Text>
+          <Text style={styles.medName}>💊 {item.medication_name}</Text>
 
-        {item.taken === null && (
-          <View style={styles.actionRow}>
+          {item.taken === null && (
+            <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.takenBtn]}
+                onPress={() => handleMarkDose(item, true)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="thumbs-up" size={26} color={COLORS.white} />
+                <Text style={styles.actionBtnText}>Sí la tomé</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.skippedBtn]}
+                onPress={() => handleMarkDose(item, false)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close-circle" size={26} color={COLORS.white} />
+                <Text style={styles.actionBtnText}>No la tomé</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {item.taken !== null && (
             <TouchableOpacity
-              style={[styles.actionBtn, styles.takenBtn]}
-              onPress={() => handleMarkDose(item, true)}
+              style={styles.correctBtn}
+              onPress={() => handleCorrectDose(item)}
               activeOpacity={0.7}
             >
-              <Ionicons name="thumbs-up" size={26} color={COLORS.white} />
-              <Text style={styles.actionBtnText}>Sí la tomé</Text>
+              <Ionicons name="create-outline" size={18} color={COLORS.textSecondary} />
+              <Text style={styles.correctBtnText}>¿Fue un error? Corregir</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.skippedBtn]}
-              onPress={() => handleMarkDose(item, false)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="close-circle" size={26} color={COLORS.white} />
-              <Text style={styles.actionBtnText}>No la tomé</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
+          )}
+        </Card>
+      </Animated.View>
     );
   };
 
   const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
+    <Animated.View entering={FadeInDown.duration(350)} style={styles.emptyContainer}>
       <Ionicons name="calendar-outline" size={80} color={COLORS.textLight} />
-      <Text style={styles.emptyTitle}>Sin historial</Text>
+      <Text style={styles.emptyTitle}>Sin registros</Text>
       <Text style={styles.emptyText}>
-        Aquí aparecerán tus registros de tomas cuando agregues medicamentos y llegue la hora de tomarlos.
+        {filter === 'all'
+          ? 'Aquí aparecerán tus registros de tomas cuando agregues medicamentos y llegue la hora de tomarlos.'
+          : 'No hay registros que coincidan con este filtro.'}
       </Text>
-    </View>
+    </Animated.View>
   );
 
-  const generatePendingDoses = async () => {
-    if (!user) return;
+  const syncPendingDoses = async () => {
+    if (!activePatientId) return;
+    const result = await reconcileDoseRecords(activePatientId);
+    await fetchRecords();
 
-    const { data: meds } = await supabase
-      .from('medications')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('active', true);
-
-    if (!meds || meds.length === 0) {
-      Alert.alert('Info', 'No tienes medicamentos activos.');
-      return;
-    }
-
-    const now = new Date();
-    const inserts: any[] = [];
-
-    for (const med of meds) {
-      const [h, m] = med.start_time.split(':').map(Number);
-      const startToday = new Date();
-      startToday.setHours(h, m, 0, 0);
-
-      let doseTime = new Date(startToday);
-
-      while (doseTime <= now) {
-        const { data: existing } = await supabase
-          .from('dose_records')
-          .select('id')
-          .eq('medication_id', med.id)
-          .eq('scheduled_at', doseTime.toISOString())
-          .maybeSingle();
-
-        if (!existing) {
-          inserts.push({
-            medication_id: med.id,
-            user_id: user.id,
-            scheduled_at: doseTime.toISOString(),
-            taken: null,
-            responded_at: null,
-          });
-        }
-
-        doseTime = new Date(doseTime.getTime() + med.frequency_hours * 60 * 60 * 1000);
-      }
-    }
-
-    if (inserts.length > 0) {
-      await supabase.from('dose_records').insert(inserts);
-      fetchRecords();
-      Alert.alert('Listo', `Se generaron ${inserts.length} registro(s) pendiente(s).`);
+    if (result.medsChecked === 0) {
+      alert('Info', 'No tienes medicamentos activos.');
+    } else if (result.inserted === 0 && result.updatedToSkipped === 0) {
+      alert('Info', 'Tu historial ya está al día.');
     } else {
-      Alert.alert('Info', 'No hay dosis pendientes por registrar.');
+      alert('Listo', `Se actualizó tu historial: ${result.inserted} registro(s) nuevo(s), ${result.updatedToSkipped} marcado(s) como no tomados.`);
     }
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header — Verde Bosque Primario */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Historial de Tomas</Text>
-          <Text style={styles.headerSubtitle}>{records.length} registro(s)</Text>
+      <ScreenHeader
+        title="Historial de Tomas"
+        subtitle={`${filteredRecords.length} registro(s)`}
+        rightElement={
+          <TouchableOpacity style={styles.generateBtn} onPress={syncPendingDoses} activeOpacity={0.7}>
+            <Ionicons name="sync-outline" size={26} color={COLORS.white} />
+          </TouchableOpacity>
+        }
+      >
+        <View style={styles.filterRow}>
+          {FILTERS.map((f) => {
+            const active = filter === f.key;
+            return (
+              <TouchableOpacity
+                key={f.key}
+                style={[styles.filterChip, active && styles.filterChipActive]}
+                onPress={() => setFilter(f.key)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name={f.icon} size={16} color={active ? COLORS.primary : COLORS.white} />
+                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-        <TouchableOpacity style={styles.generateBtn} onPress={generatePendingDoses} activeOpacity={0.7}>
-          <Ionicons name="add-circle-outline" size={28} color={COLORS.white} />
-        </TouchableOpacity>
-      </View>
+      </ScreenHeader>
+      <PatientBanner />
 
       {/* Records List */}
       <FlatList
-        data={records}
+        data={filteredRecords}
         keyExtractor={(item) => item.id}
         renderItem={renderRecord}
         ListEmptyComponent={!loading ? renderEmpty : null}
-        contentContainerStyle={records.length === 0 ? styles.emptyList : styles.list}
+        contentContainerStyle={filteredRecords.length === 0 ? styles.emptyList : styles.list}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
         }
@@ -249,26 +287,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.lg + 4,
-    borderBottomLeftRadius: BORDER_RADIUS.xl,
-    borderBottomRightRadius: BORDER_RADIUS.xl,
-  },
-  headerTitle: {
-    fontSize: FONTS.sizeTitle,
-    fontWeight: 'bold',
-    color: COLORS.white,
-  },
-  headerSubtitle: {
-    fontSize: FONTS.sizeMedium,
-    color: '#C8E6C9',
-    marginTop: 4,
-  },
   generateBtn: {
     width: TOUCH_TARGET.minWidth,
     height: TOUCH_TARGET.minHeight,
@@ -276,6 +294,35 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  filterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.4)',
+  },
+  filterChipActive: {
+    backgroundColor: COLORS.white,
+    borderColor: COLORS.white,
+  },
+  filterChipText: {
+    fontSize: FONTS.sizeSmall - 2,
+    fontFamily: FONTS.family.semiBold,
+    color: COLORS.white,
+  },
+  filterChipTextActive: {
+    color: COLORS.primary,
   },
   list: {
     padding: SPACING.md,
@@ -287,15 +334,7 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
   },
   card: {
-    backgroundColor: COLORS.card,
-    borderRadius: BORDER_RADIUS.lg,
-    padding: SPACING.lg,
     marginBottom: SPACING.md,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
   },
   cardTop: {
     flexDirection: 'row',
@@ -313,15 +352,16 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: FONTS.sizeSmall,
-    fontWeight: 'bold',
+    fontFamily: FONTS.family.bold,
   },
   dateText: {
     fontSize: FONTS.sizeSmall,
+    fontFamily: FONTS.family.regular,
     color: COLORS.textSecondary,
   },
   medName: {
     fontSize: FONTS.sizeLarge,
-    fontWeight: 'bold',
+    fontFamily: FONTS.family.bold,
     color: COLORS.text,
     marginBottom: SPACING.md,
   },
@@ -347,7 +387,21 @@ const styles = StyleSheet.create({
   actionBtnText: {
     color: COLORS.white,
     fontSize: FONTS.sizeMedium,
-    fontWeight: 'bold',
+    fontFamily: FONTS.family.bold,
+  },
+  correctBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: SPACING.sm,
+    paddingVertical: SPACING.sm,
+  },
+  correctBtnText: {
+    fontSize: FONTS.sizeSmall - 2,
+    fontFamily: FONTS.family.semiBold,
+    color: COLORS.textSecondary,
+    textDecorationLine: 'underline',
   },
   emptyContainer: {
     alignItems: 'center',
@@ -355,12 +409,13 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: FONTS.sizeLarge,
-    fontWeight: 'bold',
+    fontFamily: FONTS.family.bold,
     color: COLORS.text,
     marginTop: SPACING.md,
   },
   emptyText: {
     fontSize: FONTS.sizeMedium,
+    fontFamily: FONTS.family.regular,
     color: COLORS.textSecondary,
     textAlign: 'center',
     marginTop: SPACING.sm,

@@ -1,0 +1,23 @@
+diff --git a/node_modules/expo-intent-launcher/android/src/main/java/expo/modules/intentlauncher/IntentLauncherModule.kt b/node_modules/expo-intent-launcher/android/src/main/java/expo/modules/intentlauncher/IntentLauncherModule.kt
+index 56bd930..e3e4cb7 100644
+--- a/node_modules/expo-intent-launcher/android/src/main/java/expo/modules/intentlauncher/IntentLauncherModule.kt
++++ b/node_modules/expo-intent-launcher/android/src/main/java/expo/modules/intentlauncher/IntentLauncherModule.kt
+@@ -62,9 +62,16 @@ class IntentLauncherModule : Module() {
+       }
+ 
+       params.extra?.let {
+-        val valuesList = it.mapValues { (_, value) ->
+-          if (value is Double) value.toInt() else value
++        // Convierte recursivamente Double -> Int, incluyendo dentro de listas/arrays
++        // (ej. EXTRA_DAYS de AlarmClock.ACTION_SET_ALARM, que Android espera como
++        // ArrayList<Integer>, no ArrayList<Double>). Sin esto, un array de números
++        // desde JS llega como ArrayList<Double> y Android lo descarta en silencio.
++        fun convert(value: Any?): Any? = when (value) {
++          is Double -> value.toInt()
++          is List<*> -> ArrayList(value.map { item -> convert(item) })
++          else -> value
+         }
++        val valuesList = it.mapValues { (_, value) -> convert(value) }
+         intent.putExtras(valuesList.toBundle())
+       }
+       params.flags?.let { intent.addFlags(it) }

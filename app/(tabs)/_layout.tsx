@@ -1,8 +1,23 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, FONTS } from '@/lib/theme';
+import { BORDER_RADIUS, COLORS, FONTS } from '@/lib/theme';
+
+function TabIcon({
+  name,
+  focused,
+}: {
+  name: React.ComponentProps<typeof Ionicons>['name'];
+  focused: boolean;
+}) {
+  return (
+    <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
+      <Ionicons name={name} size={26} color={focused ? COLORS.primary : COLORS.textSecondary} />
+    </View>
+  );
+}
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
@@ -18,18 +33,18 @@ export default function TabLayout() {
           backgroundColor: COLORS.white,
           borderTopColor: COLORS.border,
           borderTopWidth: 0.5,
-          height: 70 + insets.bottom,
+          height: 68 + insets.bottom,
           paddingBottom: insets.bottom + 4,
-          paddingTop: 8,
+          paddingTop: 6,
           elevation: 10,
-          shadowColor: COLORS.text,
+          shadowColor: COLORS.cardShadow,
           shadowOffset: { width: 0, height: -2 },
           shadowOpacity: 0.06,
           shadowRadius: 8,
         },
         tabBarLabelStyle: {
-          fontSize: FONTS.sizeSmall,
-          fontWeight: 'bold',
+          fontSize: FONTS.sizeSmall - 4,
+          fontFamily: FONTS.family.semiBold,
         },
         tabBarIconStyle: {
           marginBottom: -2,
@@ -40,17 +55,15 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Inicio',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="home" size={32} color={color} />
-          ),
+          tabBarIcon: ({ focused }) => <TabIcon name={focused ? 'home' : 'home-outline'} focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="add"
         options={{
           title: 'Agregar',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="add-circle" size={38} color={color} />
+          tabBarIcon: ({ focused }) => (
+            <TabIcon name={focused ? 'add-circle' : 'add-circle-outline'} focused={focused} />
           ),
         }}
       />
@@ -58,20 +71,29 @@ export default function TabLayout() {
         name="history"
         options={{
           title: 'Historial',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="time" size={32} color={color} />
-          ),
+          tabBarIcon: ({ focused }) => <TabIcon name={focused ? 'time' : 'time-outline'} focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Perfil',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="person" size={32} color={color} />
-          ),
+          tabBarIcon: ({ focused }) => <TabIcon name={focused ? 'person' : 'person-outline'} focused={focused} />,
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  iconWrap: {
+    width: 44,
+    height: 32,
+    borderRadius: BORDER_RADIUS.full,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconWrapActive: {
+    backgroundColor: COLORS.primaryBg,
+  },
+});
