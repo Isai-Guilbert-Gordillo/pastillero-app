@@ -1,94 +1,139 @@
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { BORDER_RADIUS, COLORS, FONTS, SHADOWS, SPACING, TOUCH_TARGET } from '@/lib/theme';
+import { Pressable, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeOut,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
+import Text from '@/components/ui/Text';
+import { useTheme } from '@/context/ThemeContext';
+import { MOTION, SHAPE, SPACING, STATE_LAYER, TOUCH, withAlpha } from '@/lib/theme';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Chip de filtro de Material 3.
+//
+// La selección se comunica con FORMA y color a la vez: aparece una palomita a
+// la izquierda, no solo cambia el fondo. Cataratas y daltonismo son parte del
+// público de esta app; un chip que solo cambia de color no dice nada.
+//
+// Altura 56dp — por encima de los 32dp de Material, por el compromiso de
+// precisión motora de PRODUCT.md.
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface ChipProps {
   label: string;
+  /** Segunda línea, más chica. Ej. el nombre completo del día bajo la inicial. */
   subLabel?: string;
-  emoji?: string;
+  /** Ícono decorativo a la izquierda cuando NO está seleccionado (ej. un emoji de horario). */
+  leading?: React.ReactNode;
   selected: boolean;
   onPress: () => void;
+  disabled?: boolean;
   style?: StyleProp<ViewStyle>;
-  compact?: boolean;
 }
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+export default function Chip({
+  label,
+  subLabel,
+  leading,
+  selected,
+  onPress,
+  disabled,
+  style,
+}: ChipProps) {
+  const { scheme } = useTheme();
 
-export default function Chip({ label, subLabel, emoji, selected, onPress, style, compact }: ChipProps) {
-  const scale = useSharedValue(1);
+  const press = useSharedValue(0);
+  const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 - press.value * 0.03 }] }));
+  const layerStyle = useAnimatedStyle(() => ({ opacity: press.value }));
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+  const content = selected ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
 
   return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={() => {
-        scale.value = withTiming(0.95, { duration: 100 });
-      }}
-      onPressOut={() => {
-        scale.value = withTiming(1, { duration: 150 });
-      }}
-      style={[
-        styles.chip,
-        compact && styles.chipCompact,
-        selected && styles.chipSelected,
-        animatedStyle,
-        style,
-      ]}
-    >
-      {emoji && <Text style={styles.emoji}>{emoji}</Text>}
-      <Text style={[styles.label, selected && styles.labelSelected]}>{label}</Text>
-      {subLabel && (
-        <Text style={[styles.subLabel, selected && styles.subLabelSelected]}>{subLabel}</Text>
-      )}
-    </AnimatedPressable>
+    <Animated.View style={[scaleStyle, style]}>
+      <Pressable
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: selected, disabled }}
+        accessibilityLabel={subLabel ? `${label}, ${subLabel}` : label}
+        onPress={onPress}
+        disabled={disabled}
+        onPressIn={() => {
+          press.value = withTiming(1, {
+            duration: MOTION.duration.short,
+            easing: Easing.bezier(...MOTION.easing.standard),
+          });
+        }}
+        onPressOut={() => {
+          press.value = withTiming(0, {
+            duration: MOTION.duration.medium,
+            easing: Easing.bezier(...MOTION.easing.standard),
+          });
+        }}
+        style={[
+          styles.chip,
+          {
+            backgroundColor: selected ? scheme.primaryContainer : 'transparent',
+            borderColor: selected ? 'transparent' : scheme.outline,
+            borderWidth: selected ? 0 : 1,
+          },
+          disabled && { opacity: STATE_LAYER.disabled },
+        ]}
+      >
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: withAlpha(content, STATE_LAYER.pressed), borderRadius: SHAPE.small },
+            layerStyle,
+          ]}
+        />
+
+        {selected ? (
+          <Animated.View entering={FadeIn.duration(MOTION.duration.short)} exiting={FadeOut.duration(100)}>
+            <Ionicons name="checkmark" size={22} color={content} style={styles.check} />
+          </Animated.View>
+        ) : (
+          leading
+        )}
+
+        <View style={styles.labels}>
+          <Text variant="labelLarge" color={content} numberOfLines={1}>
+            {label}
+          </Text>
+          {!!subLabel && (
+            <Text variant="labelSmall" color={content} numberOfLines={1} style={styles.subLabel}>
+              {subLabel}
+            </Text>
+          )}
+        </View>
+      </Pressable>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   chip: {
-    backgroundColor: COLORS.card,
-    borderRadius: BORDER_RADIUS.md,
-    paddingHorizontal: SPACING.md + 4,
-    minHeight: TOUCH_TARGET.minHeight,
-    minWidth: 72,
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    ...SHADOWS.card,
+    justifyContent: 'center',
+    minHeight: 56,
+    minWidth: TOUCH.min,
+    paddingHorizontal: SPACING.lg,
+    borderRadius: SHAPE.small,
+    overflow: 'hidden',
   },
-  chipCompact: {
-    minHeight: TOUCH_TARGET.minHeight,
-    paddingHorizontal: SPACING.md,
+  check: {
+    marginRight: SPACING.sm,
   },
-  chipSelected: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  emoji: {
-    fontSize: FONTS.sizeSmall,
-    textAlign: 'center',
-  },
-  label: {
-    fontSize: FONTS.sizeMedium,
-    fontFamily: FONTS.family.semiBold,
-    color: COLORS.textSecondary,
-  },
-  labelSelected: {
-    color: COLORS.white,
-    fontFamily: FONTS.family.bold,
+  labels: {
+    alignItems: 'center',
   },
   subLabel: {
-    fontSize: 14,
-    fontFamily: FONTS.family.medium,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-  subLabelSelected: {
-    color: COLORS.white,
+    marginTop: 1,
+    opacity: 0.9,
   },
 });

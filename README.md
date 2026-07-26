@@ -1,6 +1,6 @@
 # 💊 PastilleroApp
 
-App móvil de recordatorio de medicamentos pensada para adultos mayores (80+): texto grande, botones de al menos 70×70px, alarmas sonoras persistentes y un sistema de cuidadores para que un familiar pueda ayudar a administrarla a distancia.
+App móvil de recordatorio de medicamentos pensada para adultos mayores: texto grande, botones de al menos 70×70px, alarmas sonoras persistentes y un sistema de cuidadores para que un familiar pueda ayudar a administrarla a distancia.
 
 ![Expo](https://img.shields.io/badge/Expo-SDK%2054-000020?logo=expo&logoColor=white)
 ![React Native](https://img.shields.io/badge/React%20Native-0.81-61DAFB?logo=react&logoColor=white)
@@ -67,7 +67,7 @@ App móvil de recordatorio de medicamentos pensada para adultos mayores (80+): t
 - **App cliente-pesada, sin servidor propio.** Todo el backend es Supabase (Postgres + Auth + Storage). No hay API intermedia: la app habla directo con Supabase usando la clave `anon` pública, y toda la seguridad de "quién puede ver/editar qué" vive en **Row Level Security (RLS)** de Postgres, no en el cliente.
 - **Las alarmas son locales al teléfono.** Se programan con `expo-notifications` (canal `alarma_medicamentos`) y con `expo-intent-launcher` (`ACTION_SET_ALARM`, crea una alarma real en el Reloj de Android). No hay push notifications desde servidor — si un cuidador agrega o edita un medicamento desde su propio teléfono, la app lo avisa explícitamente: la alarma **no** sonará en el teléfono del paciente hasta que esa persona abra PastilleroApp al menos una vez.
 - **Cuidado compartido vía RLS, no vía cuenta compartida.** Cada persona tiene su propio correo/contraseña. El acceso de un cuidador a los datos de un paciente se resuelve con políticas RLS adicionales (`is_caregiver_of()`) sobre `medications` y `dose_records`, activadas al redimir un código de invitación (`redeem_caregiver_invite()`, función `SECURITY DEFINER`). Ver [Sistema de cuidadores](#sistema-de-cuidadores).
-- **Alerta de tarjeta única en Inicio.** La pantalla de Inicio destaca la dosis más urgente en una tarjeta grande; si hay varios medicamentos con horarios cercanos, solo se resalta el más próximo (ver [Limitaciones conocidas](#limitaciones-conocidas)).
+- **Alerta de bloque único en Inicio.** La pantalla de Inicio destaca la dosis más urgente en el bloque grande de arriba; si hay varios medicamentos con horarios cercanos, los demás aparecen como filas compactas debajo (ver [Limitaciones conocidas](#limitaciones-conocidas)).
 
 ## Estructura del proyecto
 
@@ -77,36 +77,42 @@ pastillero-app/
 │   ├── _layout.tsx               # Layout raíz: fuentes, providers, routing de auth, deep links de alarma
 │   ├── (auth)/
 │   │   └── login.tsx             # Login, registro y recuperación de contraseña (código por correo)
-│   ├── (tabs)/                   # Navegación inferior
-│   │   ├── index.tsx             # Inicio — tarjeta de dosis urgente + lista de medicamentos
-│   │   ├── add.tsx               # Agregar medicamento
-│   │   ├── history.tsx           # Historial con filtros (Todos/Pendientes/Tomadas/No tomadas)
-│   │   └── profile.tsx           # Perfil, cerrar sesión, cuidado compartido
+│   ├── (tabs)/                   # Barra de navegación inferior — 3 destinos
+│   │   ├── index.tsx             # Inicio — bloque de "ahora" + lista de medicamentos + FAB
+│   │   ├── history.tsx           # Historial — tira semanal + línea de tiempo del día
+│   │   └── profile.tsx           # Perfil, apariencia, cuidado compartido, cerrar sesión
+│   ├── add.tsx                   # Agregar medicamento (pantalla completa, no es un destino)
 │   ├── details/[id].tsx          # Detalle y edición de un medicamento
 │   ├── alarm.tsx                 # Pantalla de alarma a pantalla completa
 │   └── permissions-guide.tsx     # Guía de activación de permisos (Android)
 ├── components/
-│   ├── AppAlert.tsx               # Modal de alerta propio (reemplaza Alert nativo, estilizado)
+│   ├── Feedback.tsx               # Snackbar + bottom sheet + diálogo (useFeedback)
 │   ├── PatientBanner.tsx          # Banner "Viendo la cuenta de X" en modo cuidador
-│   ├── AdBanner.tsx                # Placeholder de banner publicitario (ver Limitaciones)
+│   ├── AdBanner.tsx               # Placeholder de banner publicitario (ver Limitaciones)
 │   ├── WebTimePicker.tsx          # Selector de hora propio para la versión web
-│   └── ui/                        # Design system: Button, Card, Chip, IconBadge, ScreenHeader
+│   └── ui/                        # Design system Material 3: Text, Surface, Button, Chip,
+│                                  # TextField, TopAppBar, NavigationBar, Fab, ListItem,
+│                                  # DoseStatus, IconBadge
 ├── context/
 │   ├── AuthContext.tsx            # Sesión de Supabase Auth (login/registro/reset de contraseña)
-│   └── CaregiverContext.tsx       # Cuenta activa (propia o de un paciente), invitaciones, vínculos
+│   ├── CaregiverContext.tsx       # Cuenta activa (propia o de un paciente), invitaciones, vínculos
+│   └── ThemeContext.tsx           # Esquema claro/oscuro (useTheme, useThemedStyles)
 ├── lib/
 │   ├── supabase.ts                # Cliente de Supabase (URL + anon key)
 │   ├── notifications.ts           # Cálculo de horarios, notificaciones locales, alarma nativa
 │   ├── doseSync.ts                # Reconciliación automática de dosis pendientes/no tomadas
-│   ├── theme.ts                   # Colores, tipografía, espaciado, tamaño mínimo de toque
+│   ├── theme.ts                   # Tokens del sistema: roles de color (claro y oscuro), escala
+│   │                              # tipográfica, espaciado, forma, elevación, movimiento
 │   └── types.ts                   # Tipos: Medication, DoseRecord, CaregiverLink
+├── DESIGN.md                      # Sistema de diseño: doctrina, roles y reglas (leer antes de tocar UI)
+├── PRODUCT.md                     # Contexto de producto: usuarios, promesa, restricciones
 ├── supabase-schema.sql            # Esquema completo + migraciones (correr en el SQL Editor de Supabase)
 ├── patches/                       # Parches aplicados con patch-package (postinstall)
 ├── app.json                       # Configuración de Expo (permisos, plugins, bundle ids)
 └── eas.json                       # Perfiles de build (development / preview / production)
 ```
 
-> `components/` también trae algunos archivos de la plantilla por defecto de `create-expo-app` (`hello-wave.tsx`, `parallax-scroll-view.tsx`, `themed-text.tsx`, etc.) que no se usan en la app — se dejaron sin tocar para no complicar el diff, pero se pueden borrar con seguridad.
+> Antes de escribir o modificar cualquier pantalla, lee [DESIGN.md](DESIGN.md): todo color, tamaño de texto, espaciado y forma sale de un token de `lib/theme.ts` resuelto con `useTheme()`, nunca de un valor escrito a mano.
 
 ## Requisitos previos
 

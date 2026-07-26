@@ -1,8 +1,9 @@
-import { AppAlertProvider } from '@/components/AppAlert';
+import { FeedbackProvider } from '@/components/Feedback';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { CaregiverProvider } from '@/context/CaregiverContext';
+import { ThemeProvider, useTheme } from '@/context/ThemeContext';
+import { enqueueAlarm } from '@/lib/alarmQueue';
 import { registerForPushNotifications, setupNotificationCategories, snoozeAlarm } from '@/lib/notifications';
-import { COLORS } from '@/lib/theme';
 import {
     Poppins_400Regular,
     Poppins_500Medium,
@@ -19,16 +20,23 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
 import { ActivityIndicator, AppState, AppStateStatus, Platform, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function RootLayoutNav() {
   const { user, loading } = useAuth();
+  const { scheme } = useTheme();
   const segments = useSegments();
   const router = useRouter();
 
   const navigationReady = useRef(false);
-  const lastHandledMedDose = useRef<string>(''); // evitar doble nav por medicationId+scheduledAt
+  // Ref (no state) para que navigateToAlarm, cerrada dentro de efectos con
+  // deps [], siempre lea el segmento de ruta actual y no un valor viejo.
+  const onAlarmScreenRef = useRef(false);
+  useEffect(() => {
+    onAlarmScreenRef.current = segments[0] === 'alarm';
+  }, [segments]);
 
   useEffect(() => {
     registerForPushNotifications();
@@ -41,7 +49,9 @@ function RootLayoutNav() {
   }, []);
 
   // ─── Detectar cuando la app vuelve al primer plano ───
-  // Si hay notificaciones ALARM pendientes, navegar automáticamente a /alarm
+  // Encola TODAS las notificaciones ALARM pendientes (antes solo procesaba
+  // la primera y descartaba el resto con un `break`, así que un segundo
+  // medicamento pendiente se quedaba sin mostrar).
   useEffect(() => {
     const handleAppStateChange = async (nextState: AppStateStatus) => {
       if (nextState === 'active' && navigationReady.current) {
@@ -51,10 +61,9 @@ function RootLayoutNav() {
             const data = notif.request.content.data;
             if (data?.medicationId && data?.type === 'ALARM') {
               console.log('🔔 App volvió al foreground con alarma pendiente');
-              navigateToAlarm(data, notif.request.identifier);
+              navigateToAlarm(data);
               // Limpiar la notificación del sistema ya que estamos abriendo la alarma
               Notifications.dismissNotificationAsync(notif.request.identifier).catch(() => {});
-              break;
             }
           }
         } catch (e) {
@@ -76,10 +85,11 @@ function RootLayoutNav() {
         const medicationId = parsed.queryParams?.medicationId;
         const scheduledAt = parsed.queryParams?.scheduledAt;
         if (medicationId) {
-          navigateToAlarm(
-            { medicationId: String(medicationId), type: 'ALARM', scheduledAt: scheduledAt ? String(scheduledAt) : '' },
-            'deeplink'
-          );
+          navigateToAlarm({
+            medicationId: String(medicationId),
+            type: 'ALARM',
+            scheduledAt: scheduledAt ? String(scheduledAt) : '',
+          });
         }
       }
     };
@@ -97,31 +107,23 @@ function RootLayoutNav() {
     return () => subscription.remove();
   }, []);
 
-  // Helper: navegar a AlarmScreen deduplicando por medicamento+dosis
-  const navigateToAlarm = (data: Record<string, unknown>, _notifId: string) => {
-    if (!navigationReady.current) return;
-    
-    // Deduplicar por medicationId + scheduledAt (no por notifId)
-    // Así la primera notificación abre la alarma, y los recordatorios NO abren duplicados
-    const dedupeKey = `${data.medicationId}_${data.scheduledAt || ''}`;
-    if (lastHandledMedDose.current === dedupeKey) return;
-    lastHandledMedDose.current = dedupeKey;
+  // Helper: agrega la dosis a la cola compartida (lib/alarmQueue.ts) y solo
+  // navega a /alarm si no estamos ya ahí — así dos medicamentos cerca en el
+  // tiempo comparten UNA sola pantalla en vez de apilar una por encima de
+  // otra (lo que dejaba sonando para siempre la que quedaba enterrada).
+  const navigateToAlarm = (data: Record<string, unknown>) => {
+    if (!navigationReady.current || !data.medicationId) return;
 
-    // Limpiar el dedupeKey después de 15 min para permitir futuras dosis del mismo med
-    setTimeout(() => {
-      if (lastHandledMedDose.current === dedupeKey) {
-        lastHandledMedDose.current = '';
-      }
-    }, 15 * 60 * 1000);
+    const added = enqueueAlarm({
+      medicationId: String(data.medicationId),
+      scheduledAt: data.scheduledAt ? String(data.scheduledAt) : '',
+    });
+    if (!added) return; // ya estaba encolada o ya se confirmó
+
+    if (onAlarmScreenRef.current) return; // AlarmScreen ya está suscrita a la cola
 
     // NO iniciar alarma aquí — AlarmScreen lo hace en su useEffect
-    router.push({
-      pathname: '/alarm',
-      params: {
-        medicationId: String(data.medicationId),
-        scheduledAt: data.scheduledAt ? String(data.scheduledAt) : '',
-      },
-    });
+    router.push('/alarm');
   };
 
   // ─── Observador global: notificación recibida en PRIMER PLANO ───
@@ -130,7 +132,7 @@ function RootLayoutNav() {
       const data = notification.request.content.data;
       if (data?.medicationId && data?.type === 'ALARM') {
         console.log('🔔 Notificación ALARM recibida en foreground');
-        navigateToAlarm(data, notification.request.identifier);
+        navigateToAlarm(data);
       }
     });
     return () => subscription.remove();
@@ -150,15 +152,13 @@ function RootLayoutNav() {
         if (data.medicationId) {
           const scheduledAt = data.scheduledAt ? String(data.scheduledAt) : undefined;
           await snoozeAlarm(String(data.medicationId), data, scheduledAt);
-          // Limpiar dedup para que la nueva notificación pueda navegar
-          lastHandledMedDose.current = '';
         }
         return;
       }
 
       // Cualquier otra acción (tap, TAKE_MEDICINE) → abrir AlarmScreen
       console.log('🔔 Notificación tocada — abriendo AlarmScreen');
-      navigateToAlarm(data, response.notification.request.identifier);
+      navigateToAlarm(data);
     });
     return () => subscription.remove();
   }, []);
@@ -172,7 +172,7 @@ function RootLayoutNav() {
       if (data?.medicationId) {
         // Esperar a que la navegación esté lista
         const timer = setTimeout(() => {
-          navigateToAlarm(data, response.notification.request.identifier);
+          navigateToAlarm(data);
         }, 800);
         return () => clearTimeout(timer);
       }
@@ -204,42 +204,60 @@ function RootLayoutNav() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: scheme.background }}>
+        <ActivityIndicator size="large" color={scheme.primary} />
       </View>
     );
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen
-        name="alarm"
-        options={{
+    <>
+      {/* Edge-to-edge: la barra de estado es transparente y cada pantalla aplica
+          sus propios insets. El estilo de los íconos sigue al esquema activo, no
+          a una constante — en oscuro, íconos oscuros serían invisibles. */}
+      <StatusBar style={scheme.dark ? 'light' : 'dark'} translucent backgroundColor="transparent" />
+
+      <Stack
+        screenOptions={{
           headerShown: false,
-          presentation: 'fullScreenModal',
-          animation: 'fade',
-          gestureEnabled: false,
+          contentStyle: { backgroundColor: scheme.background },
         }}
-      />
-      <Stack.Screen
-        name="details/[id]"
-        options={{
-          headerShown: false,
-          presentation: 'card',
-          animation: 'slide_from_right',
-        }}
-      />
-      <Stack.Screen
-        name="permissions-guide"
-        options={{
-          headerShown: false,
-          presentation: 'card',
-          animation: 'slide_from_bottom',
-        }}
-      />
-    </Stack>
+      >
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen
+          name="add"
+          options={{
+            // Alta de medicamento: pantalla completa sobre la barra de
+            // navegación. Es una tarea con principio y fin, no un destino.
+            presentation: 'card',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="alarm"
+          options={{
+            presentation: 'fullScreenModal',
+            animation: 'fade',
+            gestureEnabled: false,
+          }}
+        />
+        <Stack.Screen
+          name="details/[id]"
+          options={{
+            presentation: 'card',
+            animation: 'slide_from_right',
+          }}
+        />
+        <Stack.Screen
+          name="permissions-guide"
+          options={{
+            presentation: 'card',
+            animation: 'slide_from_bottom',
+          }}
+        />
+      </Stack>
+    </>
   );
 }
 
@@ -263,13 +281,16 @@ export default function RootLayout() {
   }
 
   return (
-    <AppAlertProvider>
-      <AuthProvider>
-        <CaregiverProvider>
-          <RootLayoutNav />
-          <StatusBar style="dark" />
-        </CaregiverProvider>
-      </AuthProvider>
-    </AppAlertProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider>
+        <FeedbackProvider>
+          <AuthProvider>
+            <CaregiverProvider>
+              <RootLayoutNav />
+            </CaregiverProvider>
+          </AuthProvider>
+        </FeedbackProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

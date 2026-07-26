@@ -287,3 +287,146 @@ DROP POLICY IF EXISTS "Caregivers can update patient dose_records" ON dose_recor
 CREATE POLICY "Caregivers can update patient dose_records"
   ON dose_records FOR UPDATE
   USING (is_caregiver_of(user_id));
+
+-- ============================================
+-- MIGRACIÓN: Duración del tratamiento (crónico vs. por tiempo limitado)
+--
+-- Hasta ahora medications solo guardaba el RITMO de la toma (cada cuántas
+-- horas, a qué hora, qué días), pero nunca por CUÁNTO TIEMPO TOTAL — el
+-- sistema asumía implícitamente que todo medicamento es para siempre.
+--
+-- regimen_type es explícito (no inferido) para que la UI pueda preguntar
+-- directo: "¿lo vas a tomar para siempre o por unos días?".
+--   - 'indefinido'  → tratamiento crónico, sin fecha de fin.
+--   - 'por_tiempo'  → tratamiento con duración fija (ej. antibiótico).
+--
+-- duration_days y end_date solo aplican a 'por_tiempo' (NULL en 'indefinido').
+-- end_date se calcula en el cliente como created_at + duration_days y se
+-- recalcula solo si duration_days cambia, para no reiniciar la cuenta con
+-- cada edición menor.
+-- ============================================
+ALTER TABLE medications
+  ADD COLUMN IF NOT EXISTS regimen_type TEXT NOT NULL DEFAULT 'indefinido'
+    CHECK (regimen_type IN ('indefinido', 'por_tiempo'));
+
+ALTER TABLE medications
+  ADD COLUMN IF NOT EXISTS duration_days INTEGER CHECK (duration_days IS NULL OR duration_days > 0);
+
+ALTER TABLE medications
+  ADD COLUMN IF NOT EXISTS end_date DATE;
+
+COMMENT ON COLUMN medications.regimen_type IS '''indefinido'' (crónico, sin fecha de fin) o ''por_tiempo'' (duración fija, ej. antibiótico)';
+COMMENT ON COLUMN medications.duration_days IS 'Duración total del tratamiento en días. NULL si regimen_type = indefinido';
+COMMENT ON COLUMN medications.end_date IS 'Fecha en que termina el tratamiento (created_at + duration_days). NULL si regimen_type = indefinido';
+
+-- ============================================
+-- MIGRACIÓN: Pendiente de borrar la alarma del Reloj
+--
+-- La alarma nativa del Reloj (scheduleNativeAlarms en lib/notifications.ts)
+-- solo se crea para medicamentos "indefinido" — Android no da forma de que
+-- la app la borre sola. Si un medicamento pasa de "indefinido" a
+-- "por_tiempo", la alarma vieja puede seguir viva en el Reloj para siempre
+-- sin que nadie la borre.
+--
+-- has_native_alarm: la app cree que existe una alarma activa en el Reloj
+-- para este medicamento (se puso en true la última vez que scheduleNativeAlarms
+-- tuvo éxito). Es una suposición, no una certeza — Android no expone forma
+-- de confirmarlo.
+--
+-- native_alarm_cleanup_pending: true cuando el medicamento acaba de dejar de
+-- ser "indefinido" teniendo has_native_alarm = true. Dispara un recordatorio
+-- PERSISTENTE en la app (banner en Inicio + tarjeta en el detalle) hasta que
+-- el usuario confirma manualmente haber borrado la alarma en la app de Reloj.
+-- ============================================
+ALTER TABLE medications
+  ADD COLUMN IF NOT EXISTS has_native_alarm BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE medications
+  ADD COLUMN IF NOT EXISTS native_alarm_cleanup_pending BOOLEAN NOT NULL DEFAULT false;
+
+COMMENT ON COLUMN medications.has_native_alarm IS 'true si la app cree que hay una alarma activa en el Reloj del teléfono para este medicamento (creada mientras era indefinido)';
+COMMENT ON COLUMN medications.native_alarm_cleanup_pending IS 'true si puede quedar una alarma vieja en el Reloj que la app no puede borrar sola — se muestra un recordatorio persistente hasta que el usuario confirme haberla borrado';
+
+-- ============================================
+-- MIGRACIÓN: Cierre automático de tratamientos vencidos (revisión en servidor)
+--
+-- Hasta ahora, un tratamiento "por_tiempo" que ya venció se queda "activo"
+-- en la base de datos hasta que alguien abre PastilleroApp y responde al
+-- aviso de TreatmentEndedCard ("Ya terminé" / "El doctor lo extendió"). Si
+-- nadie abre la app, ese registro queda en limbo para siempre.
+--
+-- close_expired_treatments() corre DENTRO del propio Postgres de Supabase
+-- via pg_cron — no depende de que ningún teléfono esté encendido. Si un
+-- tratamiento por tiempo limitado lleva más de GRACE_DAYS días vencido sin
+-- que nadie lo haya resuelto, lo desactiva solo (active = false) y cierra
+-- cualquier dosis que se hubiera quedado "pendiente" sin confirmar. El
+-- historial en dose_records NO se borra — sigue disponible en el Historial
+-- de la app.
+--
+-- LÍMITES — son de la plataforma, no se pueden evitar con más código:
+--  - NO cancela notificaciones locales del teléfono (expo-notifications):
+--    ya dejaron de agendarse solas al llegar a end_date (ver
+--    computeDoseDates / renewMedicationNotificationsIfNeeded en
+--    lib/notifications.ts), así que no queda nada que cancelar para cuando
+--    este cron corre.
+--  - NO borra ni puede borrar la alarma nativa del Reloj de Android — eso
+--    siempre requiere que un humano la borre a mano desde la app de Reloj
+--    del teléfono (ver native_alarm_cleanup_pending arriba).
+--
+-- CÓMO ACTIVARLO (una sola vez, manual):
+--  1. En el dashboard de Supabase → Database → Extensions, activa "pg_cron"
+--     (algunos proyectos ya la traen activada; si el CREATE EXTENSION de
+--     abajo falla por permisos, actívala ahí en vez de por SQL).
+--  2. Corre todo este bloque en el SQL Editor.
+-- ============================================
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+CREATE OR REPLACE FUNCTION close_expired_treatments()
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  grace_days CONSTANT INTEGER := 3;
+  closed_count INTEGER;
+BEGIN
+  -- Cerrar como "no tomada" cualquier dosis que se haya quedado pendiente
+  -- de confirmar, antes de desactivar el medicamento.
+  UPDATE dose_records dr
+    SET taken = false
+    FROM medications m
+    WHERE dr.medication_id = m.id
+      AND dr.taken IS NULL
+      AND m.active = true
+      AND m.regimen_type = 'por_tiempo'
+      AND m.end_date IS NOT NULL
+      AND m.end_date < (CURRENT_DATE - grace_days);
+
+  UPDATE medications
+    SET active = false
+    WHERE active = true
+      AND regimen_type = 'por_tiempo'
+      AND end_date IS NOT NULL
+      AND end_date < (CURRENT_DATE - grace_days);
+
+  GET DIAGNOSTICS closed_count = ROW_COUNT;
+  RETURN closed_count;
+END;
+$$;
+
+-- Reprogramable: si ya existía el job (por ejemplo al re-ejecutar esta
+-- migración), lo quita antes de volver a crearlo.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'close-expired-treatments-daily') THEN
+    PERFORM cron.unschedule('close-expired-treatments-daily');
+  END IF;
+END $$;
+
+-- Todos los días a las 3:00 AM UTC.
+SELECT cron.schedule(
+  'close-expired-treatments-daily',
+  '0 3 * * *',
+  $$SELECT close_expired_treatments();$$
+);

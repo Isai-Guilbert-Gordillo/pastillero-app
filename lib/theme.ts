@@ -1,102 +1,456 @@
-// ─── Tema Premium Médico · WCAG 2.1 · Gerontología Digital ───
-// Optimizado para usuarios 80+: alto contraste, touch targets 70px, tipografía gruesa
-// Paleta moderna: teal/esmeralda + índigo + coral, neutrales "slate"
+// ─────────────────────────────────────────────────────────────────────────────
+// Sistema de diseño de PastilleroApp — Material 3 templado para 80+
+// Ver DESIGN.md en la raíz del proyecto para la doctrina completa.
+//
+// THESIS: los roles, componentes y gestos de Material 3 sin diluir, porque son
+// los que la persona ya aprendió en el resto de su teléfono Android. Encima de
+// esa gramática la marca aporta una sola cosa: el teal. El resto es rigor.
+//
+// Reglas que este archivo hace cumplir:
+//   · La Regla del Rol, no del Hex — ningún componente escribe un hexadecimal.
+//     Todo pasa por un rol del esquema activo (useTheme()), porque un hex no
+//     sabe resolverse en modo oscuro.
+//   · La Regla de los 16 — ningún texto baja de 16sp.
+//   · Objetivo táctil de 64dp (Material pide 48; PRODUCT.md manda más).
+// ─────────────────────────────────────────────────────────────────────────────
 
-export const COLORS = {
-  primary: '#0D9488',         // Teal/Esmeralda — confianza médica, más vivo que el verde clásico
-  primaryDark: '#0F766E',     // Para gradientes / estado presionado
-  primaryLight: '#5EEAD4',    // Teal claro — acentos
-  primaryBg: '#ECFDF9',       // Teal muy claro — fondos suaves
-  secondary: '#4F46E5',       // Índigo — enlaces, información
-  secondaryLight: '#EEF2FF',
-  accent: '#FB7185',          // Coral/Rosa — iconos de medicamentos, calidez
-  accentDark: '#F43F5E',
-  accentGold: '#C5A572',      // Dorado mate — alternativa de acento
-  white: '#FFFFFF',
-  background: '#F8FAFC',      // Slate-50 — limpieza clínica, ligeramente frío
-  card: '#FFFFFF',
-  text: '#1E293B',            // Slate-800 — máximo contraste sin ser negro puro
-  textSecondary: '#64748B',   // Slate-500
-  textLight: '#94A3B8',       // Slate-400 — placeholders
-  border: '#E2E8F0',          // Slate-200
-  danger: '#DC2626',
-  dangerLight: '#FEF2F2',
-  success: '#059669',
-  successLight: '#ECFDF5',
-  warning: '#F59E0B',         // Ámbar — próximas tomas / alertas
-  warningLight: '#FFFBEB',
-  warningBg: '#FFF8E1',
-  inputBg: '#F1F5F9',         // Slate-100 — campos de entrada
-  cardShadow: '#0F172A',      // Slate-900 — sombras con un toque de color en vez de negro puro
+import { Platform, TextStyle, ViewStyle } from 'react-native';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 1. Rampas tonales
+// ═══════════════════════════════════════════════════════════════════════════
+// Un solo tono semilla —el teal #0D9488 declarado como compromiso de marca en
+// PRODUCT.md— extendido a una rampa completa. El rol `primary` del esquema
+// claro NO es el tono de marca sino dos pasos más oscuro (T40), porque texto
+// blanco sobre #0D9488 da 3.75:1 (solo pasa como texto grande) y sobre #0F766E
+// da 5.5:1 (pasa a cualquier tamaño). El tono de marca sigue vivo: es el campo
+// de la alarma y, en su versión clara, el `primary` del esquema oscuro.
+
+const teal = {
+  t0: '#000000',
+  t10: '#00201C',
+  t20: '#003731',
+  t30: '#005048',
+  t40: '#0F766E',
+  t50: '#0D9488', // ← tono de marca declarado
+  t60: '#14B8A6',
+  t70: '#2DD4BF',
+  t80: '#5EEAD4',
+  t90: '#99F6E4',
+  t95: '#CCFBF1',
+  t98: '#ECFDF9',
+  t100: '#FFFFFF',
+} as const;
+
+const indigo = {
+  t10: '#16135C',
+  t20: '#262185',
+  t30: '#3730A3',
+  t40: '#4338CA',
+  t50: '#4F46E5',
+  t80: '#C7D2FE',
+  t90: '#E0E7FF',
+  t95: '#EEF2FF',
+} as const;
+
+const rose = {
+  t10: '#4C0519',
+  t20: '#881337',
+  t30: '#9F1239',
+  t40: '#BE123C',
+  t50: '#E11D48',
+  t70: '#FDA4AF',
+  t80: '#FECDD3',
+  t90: '#FFE4E8',
+} as const;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2. Esquemas de color (roles Material 3 + 3 roles semánticos propios)
+// ═══════════════════════════════════════════════════════════════════════════
+// Material 3 no define un rol "warning" ni "success"; esta app los necesita
+// porque el estado de una dosis es literalmente un semáforo. Se agregan como
+// roles de primera clase con su par contenedor/on-contenedor, para que se
+// comporten igual que los roles nativos y resuelvan bien en oscuro.
+
+export interface ColorScheme {
+  readonly dark: boolean;
+
+  primary: string;
+  onPrimary: string;
+  primaryContainer: string;
+  onPrimaryContainer: string;
+  /** Tono de identidad de marca. Solo para campos grandes sin texto encima. */
+  brand: string;
+
+  secondary: string;
+  onSecondary: string;
+  secondaryContainer: string;
+  onSecondaryContainer: string;
+
+  tertiary: string;
+  onTertiary: string;
+  tertiaryContainer: string;
+  onTertiaryContainer: string;
+
+  error: string;
+  onError: string;
+  errorContainer: string;
+  onErrorContainer: string;
+
+  warning: string;
+  onWarning: string;
+  warningContainer: string;
+  onWarningContainer: string;
+
+  success: string;
+  onSuccess: string;
+  successContainer: string;
+  onSuccessContainer: string;
+
+  /** Suelo de la app. Las superficies flotan sobre esto sin necesidad de sombra. */
+  background: string;
+  onBackground: string;
+  /** Tarjetas, hojas, diálogos — el "compartimento" del pastillero. */
+  surface: string;
+  onSurface: string;
+  /** Bloque interior dentro de una tarjeta. Ver La Regla de la Tarjeta que No Anida. */
+  surfaceContainer: string;
+  /** Campos de entrada, separadores con peso, fondos de celda. */
+  surfaceVariant: string;
+  onSurfaceVariant: string;
+  /** Solo placeholders y texto deshabilitado. Mínimo 4.5:1. */
+  onSurfaceMuted: string;
+
+  /** Bordes de componentes interactivos. Mínimo 3:1 contra su fondo. */
+  outline: string;
+  /** Separadores decorativos. Sin requisito de contraste. */
+  outlineVariant: string;
+
+  /** Scrim de bottom sheets y diálogos. */
+  scrim: string;
+  /** Fondo del snackbar (inverso de la superficie). */
+  inverseSurface: string;
+  onInverseSurface: string;
+  inversePrimary: string;
+
+  /** Sombra base. Con tinte de color, nunca negro puro. */
+  shadow: string;
+}
+
+export const lightScheme: ColorScheme = {
+  dark: false,
+
+  primary: teal.t40,
+  onPrimary: '#FFFFFF',
+  primaryContainer: teal.t90,
+  onPrimaryContainer: teal.t10,
+  brand: teal.t50,
+
+  secondary: indigo.t40,
+  onSecondary: '#FFFFFF',
+  secondaryContainer: indigo.t90,
+  onSecondaryContainer: indigo.t10,
+
+  tertiary: rose.t40,
+  onTertiary: '#FFFFFF',
+  tertiaryContainer: rose.t90,
+  onTertiaryContainer: rose.t10,
+
+  error: '#B91C1C',
+  onError: '#FFFFFF',
+  errorContainer: '#FEE2E2',
+  onErrorContainer: '#450A0A',
+
+  warning: '#92400E',
+  onWarning: '#FFFFFF',
+  warningContainer: '#FEF3C7',
+  onWarningContainer: '#451A03',
+
+  success: '#047857',
+  onSuccess: '#FFFFFF',
+  successContainer: '#D1FAE5',
+  onSuccessContainer: '#022C22',
+
+  background: '#EEF2F6',
+  onBackground: '#0F172A',
+  surface: '#FFFFFF',
+  onSurface: '#0F172A',
+  surfaceContainer: '#F6F8FA',
+  surfaceVariant: '#E2E8F0',
+  onSurfaceVariant: '#475569',
+  onSurfaceMuted: '#64748B',
+
+  outline: '#7C8BA1',
+  outlineVariant: '#CBD5E1',
+
+  scrim: 'rgba(3, 12, 14, 0.4)',
+  inverseSurface: '#1E2B2E',
+  onInverseSurface: '#EFF3F5',
+  inversePrimary: teal.t80,
+
+  shadow: '#0B1416',
 };
 
-export const GRADIENTS = {
-  primary: ['#14B8A6', '#0D9488', '#0F766E'] as const,
-  accent: ['#FB7185', '#F43F5E'] as const,
-  alarm: ['#F59E0B', '#DC2626'] as const,
+// El esquema oscuro no es una inversión. Se diseñó para la escena real: una
+// alarma a las 3 AM en la cara de una persona de 80 años. Los fondos son
+// tealados y muy oscuros (no negro puro, que produce halo en OLED), los tonos
+// primarios suben a T80 y el contraste de texto se mantiene por encima de 9:1.
+export const darkScheme: ColorScheme = {
+  dark: true,
+
+  primary: teal.t80,
+  onPrimary: '#00382F',
+  primaryContainer: '#00554C',
+  onPrimaryContainer: teal.t90,
+  brand: teal.t60,
+
+  secondary: indigo.t80,
+  onSecondary: indigo.t10,
+  secondaryContainer: '#312B8F',
+  onSecondaryContainer: indigo.t90,
+
+  tertiary: rose.t70,
+  onTertiary: rose.t10,
+  tertiaryContainer: rose.t30,
+  onTertiaryContainer: rose.t90,
+
+  error: '#FCA5A5',
+  onError: '#450A0A',
+  errorContainer: '#7F1D1D',
+  onErrorContainer: '#FEE2E2',
+
+  warning: '#FCD34D',
+  onWarning: '#451A03',
+  warningContainer: '#78350F',
+  onWarningContainer: '#FEF3C7',
+
+  success: '#6EE7B7',
+  onSuccess: '#022C22',
+  successContainer: '#065F46',
+  onSuccessContainer: '#D1FAE5',
+
+  background: '#0B1416',
+  onBackground: '#E6EDEF',
+  surface: '#121D20',
+  onSurface: '#E6EDEF',
+  surfaceContainer: '#172427',
+  surfaceVariant: '#1F2E31',
+  onSurfaceVariant: '#B3C1C4',
+  onSurfaceMuted: '#8CA0A3',
+
+  outline: '#7E9295',
+  outlineVariant: '#334144',
+
+  scrim: 'rgba(0, 0, 0, 0.6)',
+  inverseSurface: '#E6EDEF',
+  onInverseSurface: '#121D20',
+  inversePrimary: teal.t40,
+
+  shadow: '#000000',
 };
 
-export const FONTS = {
-  sizeSmall: 18,              // Mínimo legible para 80+
-  sizeMedium: 20,             // Cuerpo base
-  sizeLarge: 24,              // Subtítulos
-  sizeXLarge: 28,             // Encabezados de sección
-  sizeTitle: 32,              // Títulos principales (Bold)
-  sizeHero: 36,               // Tarjeta de alerta gigante
-  // Familia tipográfica Poppins (cargada en app/_layout.tsx vía @expo-google-fonts/poppins)
-  family: {
-    regular: 'Poppins_400Regular',
-    medium: 'Poppins_500Medium',
-    semiBold: 'Poppins_600SemiBold',
-    bold: 'Poppins_700Bold',
-    extraBold: 'Poppins_800ExtraBold',
-  },
+// ═══════════════════════════════════════════════════════════════════════════
+// 3. Escala tipográfica
+// ═══════════════════════════════════════════════════════════════════════════
+// Roles de Material 3 mapeados a Poppins y recalibrados hacia arriba: el cuerpo
+// de Material es 16sp; aquí es 19sp y el piso absoluto es 16sp.
+//
+// Sobre "sp": en React Native, `fontSize` ya sigue el ajuste de tamaño de
+// fuente del sistema por defecto (allowFontScaling), que es exactamente la
+// semántica de sp en Android. Lo que faltaba —y este sistema agrega— es el
+// techo: `maxFontSizeMultiplier` por rol, para que al 200% del sistema una
+// alarma no se vuelva ilegible por desbordamiento. El espaciado y los objetivos
+// táctiles NO escalan: son dp.
+
+export const FONT_FAMILY = {
+  regular: 'Poppins_400Regular',
+  medium: 'Poppins_500Medium',
+  semiBold: 'Poppins_600SemiBold',
+  bold: 'Poppins_700Bold',
+  extraBold: 'Poppins_800ExtraBold',
+} as const;
+
+export type TypeRole =
+  | 'displayLarge' | 'displayMedium' | 'displaySmall'
+  | 'headlineLarge' | 'headlineMedium' | 'headlineSmall'
+  | 'titleLarge' | 'titleMedium' | 'titleSmall'
+  | 'bodyLarge' | 'bodyMedium' | 'bodySmall'
+  | 'labelLarge' | 'labelMedium' | 'labelSmall';
+
+export interface TypeSpec {
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  letterSpacing: number;
+  /** Techo del escalado del sistema. Ver La Regla del sp Con Techo. */
+  maxScale: number;
+}
+
+export const TYPE: Record<TypeRole, TypeSpec> = {
+  displayLarge:   { fontFamily: FONT_FAMILY.extraBold, fontSize: 44, lineHeight: 52, letterSpacing: -0.5, maxScale: 1.5 },
+  displayMedium:  { fontFamily: FONT_FAMILY.extraBold, fontSize: 36, lineHeight: 44, letterSpacing: -0.4, maxScale: 1.5 },
+  displaySmall:   { fontFamily: FONT_FAMILY.bold,      fontSize: 30, lineHeight: 38, letterSpacing: -0.2, maxScale: 1.5 },
+
+  headlineLarge:  { fontFamily: FONT_FAMILY.bold,      fontSize: 30, lineHeight: 38, letterSpacing: 0,    maxScale: 1.5 },
+  headlineMedium: { fontFamily: FONT_FAMILY.bold,      fontSize: 26, lineHeight: 34, letterSpacing: 0,    maxScale: 1.5 },
+  headlineSmall:  { fontFamily: FONT_FAMILY.bold,      fontSize: 24, lineHeight: 32, letterSpacing: 0,    maxScale: 1.5 },
+
+  titleLarge:     { fontFamily: FONT_FAMILY.semiBold,  fontSize: 22, lineHeight: 30, letterSpacing: 0,    maxScale: 1.6 },
+  titleMedium:    { fontFamily: FONT_FAMILY.semiBold,  fontSize: 20, lineHeight: 28, letterSpacing: 0.15, maxScale: 1.6 },
+  titleSmall:     { fontFamily: FONT_FAMILY.semiBold,  fontSize: 18, lineHeight: 26, letterSpacing: 0.1,  maxScale: 1.6 },
+
+  bodyLarge:      { fontFamily: FONT_FAMILY.regular,   fontSize: 19, lineHeight: 30, letterSpacing: 0.15, maxScale: 1.8 },
+  bodyMedium:     { fontFamily: FONT_FAMILY.regular,   fontSize: 18, lineHeight: 28, letterSpacing: 0.25, maxScale: 1.8 },
+  bodySmall:      { fontFamily: FONT_FAMILY.regular,   fontSize: 16, lineHeight: 24, letterSpacing: 0.4,  maxScale: 1.8 },
+
+  labelLarge:     { fontFamily: FONT_FAMILY.bold,      fontSize: 18, lineHeight: 24, letterSpacing: 0.1,  maxScale: 1.6 },
+  labelMedium:    { fontFamily: FONT_FAMILY.semiBold,  fontSize: 16, lineHeight: 20, letterSpacing: 0.5,  maxScale: 1.6 },
+  labelSmall:     { fontFamily: FONT_FAMILY.semiBold,  fontSize: 14, lineHeight: 18, letterSpacing: 0.5,  maxScale: 1.6 },
 };
+
+/** Convierte un rol tipográfico en estilo de RN (sin color; el color es un rol aparte). */
+export const type = (role: TypeRole): TextStyle => {
+  const t = TYPE[role];
+  return {
+    fontFamily: t.fontFamily,
+    fontSize: t.fontSize,
+    lineHeight: t.lineHeight,
+    letterSpacing: t.letterSpacing,
+  };
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4. Espaciado — cuadrícula base de 4dp
+// ═══════════════════════════════════════════════════════════════════════════
+// Ritmo: 8 entre elementos del mismo grupo, 16 dentro de una tarjeta, 24 entre
+// grupos, 32 antes de un encabezado de sección. Siempre más aire arriba de un
+// encabezado que abajo.
 
 export const SPACING = {
   xs: 4,
   sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 48,
-};
+  md: 12,
+  lg: 16,
+  xl: 24,
+  xxl: 32,
+  xxxl: 48,
+} as const;
 
-export const BORDER_RADIUS = {
-  sm: 10,
-  md: 16,                    // Bordes redondeados para inputs/chips
-  lg: 22,
-  xl: 30,
+/** Margen de pantalla en ancho compacto (window size class "compact" de Material). */
+export const SCREEN_MARGIN = 16;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5. Forma — escala de Material 3
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const SHAPE = {
+  none: 0,
+  extraSmall: 4,
+  small: 8,
+  medium: 12,
+  large: 16,
+  extraLarge: 28,
   full: 999,
+} as const;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 6. Objetivo táctil
+// ═══════════════════════════════════════════════════════════════════════════
+// Material pide 48×48dp. PRODUCT.md pide más para precisión motora reducida, y
+// aquí queda formalizado como token en lugar de un número suelto por archivo.
+
+export const TOUCH = {
+  /** Mínimo de cualquier control. */
+  min: 64,
+  /** Acción principal de una pantalla. */
+  primary: 72,
+  /** Separación mínima entre dos objetivos adyacentes. */
+  gap: 8,
+} as const;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 7. Elevación
+// ═══════════════════════════════════════════════════════════════════════════
+// Híbrida con el tono primero: la separación entre capas la hace el color de
+// superficie; la sombra solo la confirma, y solo en lo que de verdad flota.
+// En oscuro las sombras son invisibles, así que se apagan y queda tonal pura.
+// La Regla del Halo Prohibido: ninguna sombra con offset 0 y color de marca.
+
+export type ElevationLevel = 0 | 1 | 2 | 3 | 4;
+
+export const elevation = (level: ElevationLevel, scheme: ColorScheme): ViewStyle => {
+  if (level === 0) return {};
+  if (scheme.dark) {
+    // Elevación tonal pura. Android sigue necesitando `elevation` para que las
+    // superficies se ordenen correctamente en el eje Z, pero sin sombra visible.
+    return { elevation: level * 2 };
+  }
+  const specs: Record<Exclude<ElevationLevel, 0>, ViewStyle> = {
+    1: { shadowOffset: { width: 0, height: 1 }, shadowRadius: 3,  shadowOpacity: 0.10, elevation: 1 },
+    2: { shadowOffset: { width: 0, height: 2 }, shadowRadius: 6,  shadowOpacity: 0.12, elevation: 3 },
+    3: { shadowOffset: { width: 0, height: 4 }, shadowRadius: 12, shadowOpacity: 0.14, elevation: 6 },
+    4: { shadowOffset: { width: 0, height: 8 }, shadowRadius: 24, shadowOpacity: 0.18, elevation: 8 },
+  };
+  return { shadowColor: scheme.shadow, ...specs[level] };
 };
 
-// Área mínima de toque: 70×70 px (WCAG / precisión motora reducida)
-export const TOUCH_TARGET = {
-  minHeight: 70,
-  minWidth: 70,
+// ═══════════════════════════════════════════════════════════════════════════
+// 8. Movimiento
+// ═══════════════════════════════════════════════════════════════════════════
+// Curvas y duraciones de Material 3. `emphasized` para lo que entra o cambia de
+// contenedor, `standard` para cambios de estado dentro de un componente.
+
+export const MOTION = {
+  duration: {
+    short: 150,
+    medium: 250,
+    long: 400,
+    extraLong: 550,
+  },
+  /** Bezier de Material 3, en el formato que espera Reanimated (Easing.bezier). */
+  easing: {
+    emphasized: [0.2, 0, 0, 1] as const,
+    emphasizedDecelerate: [0.05, 0.7, 0.1, 1] as const,
+    emphasizedAccelerate: [0.3, 0, 0.8, 0.15] as const,
+    standard: [0.2, 0, 0, 1] as const,
+  },
+} as const;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 9. Capas de estado (state layers)
+// ═══════════════════════════════════════════════════════════════════════════
+// Material comunica presionado/enfocado superponiendo el color de contenido a
+// una opacidad fija sobre el fondo, en vez de cambiar el color base.
+
+export const STATE_LAYER = {
+  pressed: 0.12,
+  focus: 0.12,
+  hover: 0.08,
+  disabled: 0.38,
+  disabledContainer: 0.12,
+} as const;
+
+/** Aplica alfa a un color hex de 6 dígitos o devuelve rgba() intacto. */
+export const withAlpha = (color: string, alpha: number): string => {
+  if (!color.startsWith('#') || color.length !== 7) return color;
+  const a = Math.round(Math.max(0, Math.min(1, alpha)) * 255)
+    .toString(16)
+    .padStart(2, '0');
+  return `${color}${a}`;
 };
 
-// ─── Sombras centralizadas (antes duplicadas por archivo) ───
-export const SHADOWS = {
-  card: {
-    shadowColor: COLORS.cardShadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  button: {
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  floating: {
-    shadowColor: COLORS.cardShadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
-    elevation: 8,
-  },
-};
+// ═══════════════════════════════════════════════════════════════════════════
+// 10. Utilidades
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Altura de la barra superior según su variante (Material 3). */
+export const APP_BAR_HEIGHT = {
+  small: 64,
+  large: 112,
+} as const;
+
+/** Alto del contenido de la barra de navegación inferior, sin el inset. */
+export const NAV_BAR_HEIGHT = 80;
+
+export const IS_ANDROID = Platform.OS === 'android';
+export const IS_WEB = Platform.OS === 'web';

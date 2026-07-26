@@ -88,6 +88,10 @@ export async function registerForPushNotifications(): Promise<boolean> {
  * La primera dosis se programa a la start_time seleccionada.
  * Si esa hora ya pasó hoy, se programa para mañana.
  * Las siguientes dosis siguen el intervalo de frequency_hours.
+ *
+ * Si el medicamento es "por_tiempo" y ya tiene end_date, el límite de 7 días
+ * se recorta ahí — así un tratamiento vencido no sigue agendándose cada vez
+ * que se renueva la ventana de notificaciones (ver renewMedicationNotificationsIfNeeded).
  */
 export function computeDoseDates(medication: Medication): Date[] {
   const [hours, minutes] = medication.start_time.split(':').map(Number);
@@ -102,8 +106,12 @@ export function computeDoseDates(medication: Medication): Date[] {
     firstDose.setDate(firstDose.getDate() + 1);
   }
 
-  // Límite: 7 días desde ahora
-  const limit = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  // Límite: 7 días desde ahora, recortado a end_date si el tratamiento es por tiempo limitado
+  let limit = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  if (medication.regimen_type === 'por_tiempo' && medication.end_date) {
+    const end = new Date(`${medication.end_date}T23:59:59`);
+    if (end.getTime() < limit.getTime()) limit = end;
+  }
 
   let current = new Date(firstDose.getTime());
   while (current <= limit) {
@@ -211,27 +219,23 @@ export async function scheduleNativeAlarms(medication: Medication): Promise<Nati
 
 /**
  * SISTEMA DE ALARMA PERSISTENTE PARA ABUELAS
- * 
+ *
  * Por cada dosis programa:
  *   - 1 notificación principal al momento exacto
- *   - 9 recordatorios de seguimiento cada 60 segundos (10 minutos total)
- * 
- * Cada recordatorio suena, vibra y es cada vez más urgente.
+ *   - 3 recordatorios de seguimiento cada 5 minutos (15 minutos total)
+ *
+ * Antes eran 9 recordatorios cada 60 segundos — una ráfaga casi continua
+ * que resultaba abrumadora, sobre todo combinada con la alarma nativa del
+ * Reloj que ya suena para los medicamentos "indefinido" (ver alarm.tsx).
  * Solo se detienen cuando la abuela abre la app o toca "Ya la tomé".
  */
-const REMINDER_COUNT = 9;        // 9 recordatorios después de la primera
-const REMINDER_INTERVAL_SEC = 60; // cada 60 segundos
+const REMINDER_COUNT = 3;         // 3 recordatorios después de la primera
+const REMINDER_INTERVAL_SEC = 300; // cada 5 minutos
 
 const REMINDER_MESSAGES = [
   '¡Abre la app para confirmar tu dosis!',
   '⚠️ ¡No olvides tu medicamento!',
   '🚨 ¡Tu medicamento te está esperando!',
-  '🔴 ¡URGENTE! Toma tu medicamento ahora',
-  '🆘 ¡Llevas 5 minutos sin tomar tu dosis!',
-  '🔴 ¡POR FAVOR toma tu medicamento!',
-  '🚨 ¡Ya pasaron 7 minutos! ¡TOMA TU DOSIS!',
-  '🆘 ¡8 MINUTOS! ¡Tu salud es importante!',
-  '🔴🔴 ¡ÚLTIMO AVISO! ¡TOMA TU MEDICAMENTO!',
 ];
 
 export async function scheduleMedicationNotifications(medication: Medication): Promise<string[]> {
@@ -345,17 +349,6 @@ export async function cancelPersistentAlarm(medicationId: string, scheduledAt?: 
 }
 
 /**
- * Cancela notificaciones futuras usando los IDs guardados en la tabla medications.
- * Fire-and-forget: no bloquea el hilo principal.
- */
-export function cancelNotificationsByIds(ids: string[]): void {
-  if (!ids || ids.length === 0) return;
-  for (const id of ids) {
-    Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
-  }
-}
-
-/**
  * Pospone la alarma de una dosis: cancela los recordatorios pendientes de
  * ESA dosis y programa una nueva notificación en `minutes` minutos.
  * Usado tanto desde el botón "Recordar en 5 min" de la notificación de Android
@@ -403,6 +396,59 @@ export async function cancelAllMedicationNotifications(medicationId: string): Pr
   } catch (e) {
     console.log('Error canceling notifications:', e);
   }
+}
+
+/**
+ * RENOVACIÓN DE LA VENTANA DE 7 DÍAS
+ *
+ * computeDoseDates() solo agenda notificaciones para los próximos 7 días —
+ * es una limitación necesaria (no se puede agendar "para siempre" de una
+ * sola vez), pero como nada las volvía a programar, un medicamento "para
+ * siempre" dejaba de sonar en silencio a la semana de haberse creado o
+ * editado por última vez.
+ *
+ * Esta función revisa, para UN medicamento, cuál es la dosis programada más
+ * lejana que sigue en la cola de expo-notifications. Si queda poco margen
+ * (menos de RENEWAL_THRESHOLD_DAYS), cancela lo que quede y vuelve a
+ * agendar un bloque fresco de 7 días hacia adelante — igual que se hace al
+ * crear o editar el medicamento.
+ *
+ * Es seguro llamarla seguido (por ejemplo cada vez que Inicio toma foco,
+ * igual que reconcileDoseRecords): si todavía hay margen, no hace nada y
+ * devuelve null. Si el tratamiento es "por_tiempo" y ya venció, tampoco hace
+ * nada — no tiene caso reprogramar notificaciones para un tratamiento que
+ * ya terminó.
+ *
+ * Devuelve los notification_ids nuevos si reprogramó (para guardarlos en la
+ * fila de `medications`), o null si no hizo falta tocar nada.
+ */
+const RENEWAL_THRESHOLD_DAYS = 2;
+
+export async function renewMedicationNotificationsIfNeeded(medication: Medication): Promise<string[] | null> {
+  if (medication.regimen_type === 'por_tiempo' && medication.end_date) {
+    const end = new Date(`${medication.end_date}T23:59:59`);
+    if (end.getTime() <= Date.now()) return null; // tratamiento ya vencido, no renovar
+  }
+
+  let latestScheduled = 0;
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const notif of scheduled) {
+      const d = notif.content.data;
+      if (d?.medicationId !== medication.id) continue;
+      const scheduledAt = typeof d.scheduledAt === 'string' ? new Date(d.scheduledAt).getTime() : 0;
+      if (scheduledAt > latestScheduled) latestScheduled = scheduledAt;
+    }
+  } catch (e) {
+    console.log('Error revisando notificaciones programadas:', e);
+    return null;
+  }
+
+  const threshold = Date.now() + RENEWAL_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
+  if (latestScheduled >= threshold) return null; // todavía hay ventana suficiente
+
+  await cancelAllMedicationNotifications(medication.id);
+  return scheduleMedicationNotifications(medication);
 }
 
 export async function cancelAllNotifications(): Promise<void> {

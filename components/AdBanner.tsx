@@ -1,17 +1,31 @@
 import React from 'react';
-import { View, StyleSheet, Text } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { COLORS, FONTS, SPACING, BORDER_RADIUS } from '@/lib/theme';
+import { StyleSheet, View } from 'react-native';
+import Text from '@/components/ui/Text';
+import { useTheme } from '@/context/ThemeContext';
+import { SCREEN_MARGIN, SHAPE, SPACING } from '@/lib/theme';
 
-// Banner placeholder compatible con Expo Go.
-// Para AdMob real en producción, instala react-native-google-mobile-ads,
-// agrega el plugin en app.json y haz un build nativo con EAS.
+// Marcador de posición compatible con Expo Go — todavía no hay AdMob real.
+// Para producción: instalar react-native-google-mobile-ads, agregar el plugin en
+// app.json y hacer un build nativo con EAS.
+//
+// Se mantiene deliberadamente apagado (superficie variante, borde punteado, sin
+// color de marca) y lejos del botón de confirmar dosis: un toque accidental en
+// plena alarma no puede sacar a la persona de la app.
 
 export function AdBanner() {
+  const { scheme } = useTheme();
+
   return (
-    <View style={styles.placeholder}>
-      <Ionicons name="megaphone-outline" size={20} color={COLORS.textLight} />
-      <Text style={styles.placeholderText}>Espacio publicitario</Text>
+    <View
+      accessibilityLabel="Espacio publicitario"
+      style={[
+        styles.placeholder,
+        { borderColor: scheme.outlineVariant, backgroundColor: scheme.surfaceContainer },
+      ]}
+    >
+      <Text variant="labelSmall" tone="muted">
+        Espacio publicitario
+      </Text>
     </View>
   );
 }
@@ -19,21 +33,12 @@ export function AdBanner() {
 const styles = StyleSheet.create({
   placeholder: {
     height: 56,
-    flexDirection: 'row',
-    gap: 8,
-    backgroundColor: COLORS.inputBg,
     justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: SPACING.md,
-    marginTop: SPACING.md,
-    borderRadius: BORDER_RADIUS.md,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
+    marginHorizontal: SCREEN_MARGIN,
+    marginTop: SPACING.xxl,
+    borderRadius: SHAPE.medium,
+    borderWidth: 1,
     borderStyle: 'dashed',
-  },
-  placeholderText: {
-    fontSize: FONTS.sizeSmall,
-    fontFamily: FONTS.family.medium,
-    color: COLORS.textLight,
   },
 });

@@ -1,34 +1,85 @@
-import { useAppAlert } from '@/components/AppAlert';
+import { useFeedback } from '@/components/Feedback';
+import Text from '@/components/ui/Text';
 import { useAuth } from '@/context/AuthContext';
-import { cancelNotificationsByIds, cancelPersistentAlarm, snoozeAlarm } from '@/lib/notifications';
+import { useTheme } from '@/context/ThemeContext';
+import { AlarmQueueItem, getAlarmQueue, markConfirmed, removeFromQueue, subscribeAlarmQueue } from '@/lib/alarmQueue';
+import { saveDoseTakenWithRetry } from '@/lib/doseSync';
+import { cancelPersistentAlarm, snoozeAlarm } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
-import { BORDER_RADIUS, COLORS, FONTS, GRADIENTS, SPACING, TOUCH_TARGET } from '@/lib/theme';
+import { MOTION, SCREEN_MARGIN, SHAPE, SPACING, TOUCH } from '@/lib/theme';
 import { Medication } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
-    Dimensions,
+    Pressable,
+    ScrollView,
     StyleSheet,
-    Text,
-    TouchableOpacity,
     Vibration,
     View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, {
+    Easing,
+    useAnimatedStyle,
+    useSharedValue,
+    withRepeat,
+    withSequence,
+    withTiming,
+} from 'react-native-reanimated';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// ─────────────────────────────────────────────────────────────────────────────
+// La alarma — el momento del producto.
+//
+// La versión anterior era un degradado rojo-naranja a pantalla completa. Se
+// cambió por un campo de teal de marca, y no por gusto:
+//
+//   · La Regla del Rojo Reservado. La alarma NO es un error: es la app haciendo
+//     exactamente lo que prometió. El rojo se reserva para lo que salió mal, y
+//     si todo se pinta de rojo, el rojo deja de significar algo.
+//   · Un campo rojo saturado en la cara a las 3 AM es agresivo con una persona
+//     de 80 años recién despertada. La urgencia ya la ponen el sonido en bucle,
+//     la vibración y la escala del tipo — no hace falta gritarle con el color.
+//   · Es el único lugar de la app donde el tono de marca (#0D9488) ocupa la
+//     pantalla completa. Al abrir los ojos, se reconoce de qué app es antes de
+//     leer una sola palabra.
+//
+// El único acento cálido es la píldora de "ALARMA": ámbar sobre teal, el
+// contraste más alto del sistema, y el único elemento que se mueve.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Campo de la alarma. Dos paradas del mismo tono — profundidad, no efecto. */
+const FIELD_LIGHT = ['#14B8A6', '#0F766E', '#065F58'] as const;
+const FIELD_DARK = ['#0B3B36', '#062A26', '#01201C'] as const;
 
 export default function AlarmScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { alert } = useAppAlert();
-  const params = useLocalSearchParams<{ medicationId: string; scheduledAt: string }>();
+  const { scheme } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { snack } = useFeedback();
+
+  // Sobre el campo de marca los colores no vienen de roles de superficie: es una
+  // superficie propia, con su propio par contenido/contenedor.
+  const onField = scheme.dark ? '#CCFBF1' : '#FFFFFF';
+  const onFieldMuted = scheme.dark ? 'rgba(204,251,241,0.72)' : 'rgba(255,255,255,0.78)';
+  const actionSurface = scheme.dark ? '#CCFBF1' : '#FFFFFF';
+  const onActionSurface = scheme.dark ? '#00201C' : '#0F766E';
+
+  // ─── Cola compartida de alarmas (lib/alarmQueue.ts) ───
+  // Esta pantalla SIEMPRE muestra el primer item de la cola. Si llega un
+  // segundo medicamento mientras esta pantalla ya está abierta, no se apila
+  // una pantalla nueva — solo se agrega aquí y aparece "+N esperando".
+  const [queue, setQueue] = useState<AlarmQueueItem[]>(() => getAlarmQueue());
+  useEffect(() => subscribeAlarmQueue(() => setQueue([...getAlarmQueue()])), []);
+  const current = queue[0] ?? null;
+  const currentKey = current ? `${current.medicationId}_${current.scheduledAt}` : '';
+
   const [medication, setMedication] = useState<Medication | null>(null);
   const [loading, setLoading] = useState(true);
   const [stopping, setStopping] = useState(false);
@@ -37,66 +88,94 @@ export default function AlarmScreen() {
   // Referencia para el sonido, para poder detenerlo síncronamente
   const soundRef = useRef<Audio.Sound | null>(null);
 
-  // Pulso del ícono de alarma — refuerza la urgencia
+  // Si la cola se vacía (se confirmó/pospuso el último pendiente), salir
+  useEffect(() => {
+    if (!current) {
+      router.replace('/(tabs)');
+    }
+  }, [current]);
+
+  // Único elemento en movimiento de la pantalla. Late despacio (900 ms por
+  // lado): un parpadeo rápido a las 3 AM desorienta en vez de orientar.
   const pulse = useSharedValue(1);
   useEffect(() => {
     pulse.value = withRepeat(
-      withSequence(withTiming(1.1, { duration: 550 }), withTiming(1, { duration: 550 })),
+      withSequence(
+        withTiming(1.06, { duration: 900, easing: Easing.bezier(...MOTION.easing.standard) }),
+        withTiming(1, { duration: 900, easing: Easing.bezier(...MOTION.easing.standard) })
+      ),
       -1,
       true
     );
   }, []);
   const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
 
-  // Cargar datos del medicamento
+  // Cargar datos del medicamento actual — se vuelve a ejecutar cada vez que
+  // avanzamos al siguiente item de la cola
   useEffect(() => {
-    const fetchMedication = async () => {
-      if (!params.medicationId) { // Fallback si no hay ID (modo test manual)
-        setLoading(false);
-        return;
-      }
-      const { data } = await supabase
-        .from('medications')
-        .select('*')
-        .eq('id', params.medicationId)
-        .single();
-
-      if (data) setMedication(data);
+    let cancelled = false;
+    if (!current) {
       setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setMedication(null);
+    supabase
+      .from('medications')
+      .select('*')
+      .eq('id', current.medicationId)
+      .single()
+      .then(({ data }) => {
+        if (!cancelled) {
+          setMedication(data ?? null);
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
     };
-    fetchMedication();
-  }, [params.medicationId]);
+  }, [currentKey]);
 
-  // Motor de Audio y Vibración (Workaround Agresivo)
+  // Motor de Audio y Vibración.
+  // Para medicamentos "indefinido" ya sonó (o debió sonar) la alarma nativa
+  // del Reloj del teléfono — no duplicamos el sonido fuerte aquí, solo
+  // vibramos suave y mostramos la pantalla para confirmar. Para "por_tiempo"
+  // (sin alarma nativa) esta sigue siendo la única alarma, así que se queda
+  // igual de fuerte que antes. Espera a que cargue el medicamento para saber
+  // cuál modo usar, así no hay un "flash" de sonido fuerte que luego se corta.
   useEffect(() => {
+    if (loading || !current) return;
     let mounted = true;
+    const softMode = medication?.regimen_type === 'indefinido';
 
     const startAlarmEngine = async () => {
       try {
-        // 1. Configuración de Audio para "pisar" cualquier otro sonido
         await Audio.setAudioModeAsync({
           allowsRecordingIOS: false,
-          staysActiveInBackground: true, // Vital para Android 10+ si la app se minimiza
+          staysActiveInBackground: true,
           playsInSilentModeIOS: true,
-          shouldDuckAndroid: true, // Bajar volumen de otras apps
+          shouldDuckAndroid: true,
           interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
           interruptionModeIOS: InterruptionModeIOS.DoNotMix,
         });
 
-        // 2. Vibración AGRESIVA continua INMEDIATA
-        // Patrón largo y fuerte para que sea imposible ignorar
+        if (softMode) {
+          // Vibración suave — el Reloj ya hizo el ruido fuerte
+          Vibration.vibrate([0, 400, 300, 400], true);
+          return;
+        }
+
+        // Vibración AGRESIVA continua — única alarma para este medicamento
         Vibration.vibrate(
           [0, 1000, 200, 1000, 200, 1000, 200, 1500, 300, 1500, 300, 1500],
           true
         );
 
-        // 3. Cargar sonido de alarma RUIDOSO en bucle
-        // Usamos un archivo local para evitar latencia de red
         const { sound } = await Audio.Sound.createAsync(
           require('../assets/alarm_sound.wav'),
-          { 
-            shouldPlay: true, 
-            isLooping: true, 
+          {
+            shouldPlay: true,
+            isLooping: true,
             volume: 1.0,
             rate: 1.0,
             shouldCorrectPitch: false,
@@ -106,13 +185,10 @@ export default function AlarmScreen() {
         if (mounted) {
           soundRef.current = sound;
         } else {
-          // Si el componente se desmontó mientras cargaba, limpiar
           await sound.unloadAsync();
         }
-
       } catch (error) {
         console.error('Error en motor de alarma:', error);
-        // Fallback: vibración agresiva
         Vibration.vibrate(
           [0, 1000, 200, 1000, 200, 1000, 200, 1500, 300, 1500, 300, 1500],
           true
@@ -122,7 +198,6 @@ export default function AlarmScreen() {
 
     startAlarmEngine();
 
-    // Cleanup al desmontar (si el usuario cierra la app a la fuerza o navega atrás)
     return () => {
       mounted = false;
       if (soundRef.current) {
@@ -130,7 +205,7 @@ export default function AlarmScreen() {
       }
       Vibration.cancel();
     };
-  }, []);
+  }, [loading, currentKey, medication?.regimen_type]);
 
   // ─── Detención SÍNCRONA del sonido/vibración (compartida por ambos botones) ───
   const stopSoundAndVibration = async () => {
@@ -145,296 +220,275 @@ export default function AlarmScreen() {
       soundRef.current = null;
     }
     Notifications.dismissAllNotificationsAsync().catch(() => {});
-    if (medication?.notification_ids?.length) {
-      cancelNotificationsByIds(medication.notification_ids);
-    }
   };
 
   // ─── Botón: Posponer 5 minutos ───
   const handleSnooze = async () => {
-    if (snoozing || stopping) return;
+    if (!current || snoozing || stopping) return;
     setSnoozing(true);
     await stopSoundAndVibration();
-    if (params.medicationId) {
-      await snoozeAlarm(
-        params.medicationId,
-        { medicationId: params.medicationId, type: 'ALARM', scheduledAt: params.scheduledAt || '' },
-        params.scheduledAt || undefined
-      );
-    }
-    router.replace('/(tabs)');
+    await snoozeAlarm(
+      current.medicationId,
+      { medicationId: current.medicationId, type: 'ALARM', scheduledAt: current.scheduledAt || '' },
+      current.scheduledAt || undefined
+    );
+    // Se quita de la cola actual (sin marcarla "confirmada") — el snooze ya
+    // programó una notificación nueva en 5 min que la volverá a encolar.
+    removeFromQueue(current);
+    setSnoozing(false);
   };
 
-  // ─── Botón principal: DETENER TODO ───
+  // ─── Botón principal ───
+  // Antes esta pantalla esperaba a que Supabase confirmara el guardado antes
+  // de poder salir — con la red lenta o intermitente eso dejaba a la abuela
+  // atorada mirando el botón sin poder hacer nada más. Ahora: se sale de
+  // inmediato en cuanto se detiene el sonido y se quita de la cola; el guardado
+  // corre en segundo plano con reintentos, y solo si TODOS fallan se avisa (ya
+  // en Inicio, sin bloquear nada).
   const handleStopAlarm = async () => {
-    if (stopping) return;
+    if (!current || stopping) return;
     setStopping(true);
+    const item = current;
 
-    // ══ PRIORIDAD 0 — Detención SÍNCRONA (lo que percibe el usuario) ══
+    // ══ Detención SÍNCRONA (lo que percibe el usuario) ══
     await stopSoundAndVibration();
 
-    // Cancelar TODOS los recordatorios persistentes de ESTA DOSIS
-    if (params.medicationId) {
-      cancelPersistentAlarm(params.medicationId, params.scheduledAt || undefined).catch(() => {});
-    }
+    // Cancelar TODOS los recordatorios persistentes de ESTA DOSIS (y solo esta)
+    cancelPersistentAlarm(item.medicationId, item.scheduledAt || undefined).catch(() => {});
 
-    // ══ PRIORIDAD 1 — Guardar en Supabase ══
-    try {
-      if (user && params.medicationId) {
-        const now = new Date();
-        const scheduledAt = params.scheduledAt || now.toISOString();
+    // Salir de la cola YA — si quedan más medicamentos, la pantalla avanza
+    // sola al siguiente; si no, navega a Inicio (ver el useEffect de arriba)
+    removeFromQueue(item);
+    markConfirmed(item);
+    setStopping(false);
 
-        // Buscar registro pendiente
-        const { data: existing } = await supabase
-          .from('dose_records')
-          .select('id')
-          .eq('medication_id', params.medicationId)
-          .eq('user_id', user.id)
-          .eq('scheduled_at', scheduledAt)
-          .is('taken', null)
-          .maybeSingle();
-
-        if (existing) {
-          const { error } = await supabase
-            .from('dose_records')
-            .update({ taken: true, responded_at: now.toISOString() })
-            .eq('id', existing.id);
-          if (error) throw error;
-        } else {
-          const { error } = await supabase.from('dose_records').insert({
-            medication_id: params.medicationId,
-            user_id: user.id,
-            scheduled_at: scheduledAt,
-            taken: true,
-            responded_at: now.toISOString(),
-          });
-          if (error) throw error;
+    // Guardado en segundo plano — no bloquea la salida de esta pantalla
+    if (user) {
+      const scheduledAt = item.scheduledAt || new Date().toISOString();
+      saveDoseTakenWithRetry(user.id, item.medicationId, scheduledAt).then((ok) => {
+        if (!ok) {
+          snack(
+            'La dosis quedó marcada en el teléfono, pero no se pudo guardar en el servidor.',
+            { tone: 'error' }
+          );
         }
-      }
-      // Éxito — navegar al inicio
-      router.replace('/(tabs)');
-    } catch (e) {
-      console.log('Error guardando en Supabase:', e);
-      alert(
-        'Alarma detenida',
-        'No se pudo la conexión para registrar la dosis. Pero la alarma se detuvo.',
-        [
-          { text: 'Ir al Inicio', onPress: () => router.replace('/(tabs)') },
-          { text: 'Reintentar guardado', onPress: () => { setStopping(false); } },
-        ]
-      );
+      });
     }
   };
 
-  if (loading) {
+  const field = scheme.dark ? FIELD_DARK : FIELD_LIGHT;
+
+  if (loading || !current) {
     return (
-      <LinearGradient colors={GRADIENTS.alarm} style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.white} />
-        <Text style={{ color: 'white', marginTop: 10, fontFamily: FONTS.family.medium }}>Cargando alarma...</Text>
+      <LinearGradient colors={field} style={styles.loading}>
+        <ActivityIndicator size="large" color={onField} />
+        <Text variant="bodyMedium" color={onField} style={styles.loadingText}>
+          Preparando la alarma…
+        </Text>
       </LinearGradient>
     );
   }
 
+  const moreWaiting = queue.length - 1;
+  const scheduledLabel = current.scheduledAt
+    ? new Date(current.scheduledAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+    : null;
+
   return (
-    <LinearGradient colors={GRADIENTS.alarm} style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      <View style={styles.content}>
-        {/* Ícono de alarma pulsante */}
-        <View style={styles.alarmIconContainer}>
-          <Animated.View style={[styles.alarmIconOuter, pulseStyle]}>
-            <Ionicons name="alarm" size={80} color={COLORS.white} />
-          </Animated.View>
+    <LinearGradient colors={field} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={styles.container}>
+      {/* ScrollView en vez de View fija: con letra grande o pantallas chicas el
+          contenido puede no caber — antes eso dejaba "Posponer" fuera de la
+          pantalla, sin forma de alcanzarlo. */}
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + SPACING.xl, paddingBottom: insets.bottom + SPACING.xl },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ─── Píldora de estado: el único elemento que se mueve ─── */}
+        <Animated.View style={[styles.alarmChip, { backgroundColor: scheme.warningContainer }, pulseStyle]}>
+          <Ionicons name="alarm" size={26} color={scheme.onWarningContainer} />
+          <Text variant="labelLarge" tone="onWarningContainer">
+            ES HORA DE TU MEDICINA
+          </Text>
+        </Animated.View>
+
+        {/* ─── El medicamento, a escala de display ─── */}
+        <View style={styles.medBlock}>
+          {medication?.photo_url ? (
+            <Image source={{ uri: medication.photo_url }} style={styles.photo} contentFit="cover" />
+          ) : (
+            <View style={[styles.photoPlaceholder, { borderColor: onFieldMuted }]}>
+              <Ionicons name="medical" size={56} color={onField} />
+            </View>
+          )}
+
+          <Text variant="displayMedium" color={onField} center style={styles.medName}>
+            {medication?.name ?? 'Tu medicamento'}
+          </Text>
+          <Text variant="titleLarge" color={onFieldMuted} center>
+            {medication ? `${medication.dose_mg} mg` : 'Toma tu dosis ahora'}
+            {scheduledLabel ? ` · ${scheduledLabel}` : ''}
+          </Text>
         </View>
 
-        {/* Texto principal */}
-        <Text style={styles.title}>¡HORA DE TU{'\n'}MEDICAMENTO!</Text>
-
-        {/* Info del medicamento */}
-        {medication ? (
-          <View style={styles.medCard}>
-            <Text style={styles.medEmoji}>💊</Text>
-            <Text style={styles.medName}>{medication.name}</Text>
-            <Text style={styles.medDose}>{medication.dose_mg} mg</Text>
-            {params.scheduledAt && (
-              <Text style={styles.medTime}>
-                Programada: {new Date(params.scheduledAt).toLocaleTimeString('es-MX', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </Text>
-            )}
-          </View>
-        ) : (
-          <View style={styles.medCard}>
-            <Text style={styles.medEmoji}>💊</Text>
-            <Text style={styles.medName}>Medicamento</Text>
-            <Text style={styles.medDose}>Toma tu dosis ahora</Text>
+        {/* ─── Aviso de cola ─── */}
+        {moreWaiting > 0 && (
+          <View style={[styles.queueBadge, { borderColor: onFieldMuted }]}>
+            <Ionicons name="layers-outline" size={22} color={onField} />
+            <Text variant="labelMedium" color={onField}>
+              {moreWaiting === 1
+                ? 'Después de esta hay 1 medicamento más'
+                : `Después de esta hay ${moreWaiting} medicamentos más`}
+            </Text>
           </View>
         )}
 
-        {/* Botón gigante — YA LA TOMÉ */}
-        <TouchableOpacity
-          style={[styles.stopButton, stopping && styles.stopButtonDisabled]}
+        {/* ─── Acción principal: la superficie más grande de toda la app ─── */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Ya la tomé. Detiene la alarma y registra la dosis."
+          accessibilityState={{ busy: stopping }}
           onPress={handleStopAlarm}
-          activeOpacity={0.7}
           disabled={stopping}
+          style={({ pressed }) => [
+            styles.primaryAction,
+            { backgroundColor: actionSurface },
+            (pressed || stopping) && styles.actionPressed,
+          ]}
         >
           {stopping ? (
-            <ActivityIndicator size="large" color={COLORS.white} />
+            <ActivityIndicator size="large" color={onActionSurface} />
           ) : (
             <>
-              <Ionicons name="checkmark-circle" size={40} color={COLORS.white} />
-              <Text style={styles.stopButtonText}>DETENER ALARMA</Text>
-              <Text style={styles.stopButtonSub}>Confirmar toma</Text>
+              <Ionicons name="checkmark-circle" size={48} color={onActionSurface} />
+              <Text variant="headlineSmall" color={onActionSurface} center style={styles.primaryActionLabel}>
+                YA LA TOMÉ
+              </Text>
+              <Text variant="bodySmall" color={onActionSurface} center>
+                Detiene la alarma
+              </Text>
             </>
           )}
-        </TouchableOpacity>
+        </Pressable>
 
-        {/* Botón secundario — Posponer 5 minutos */}
-        <TouchableOpacity
-          style={[styles.snoozeButton, (snoozing || stopping) && styles.stopButtonDisabled]}
+        {/* ─── Acción secundaria ─── */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Posponer 5 minutos"
+          accessibilityState={{ busy: snoozing }}
           onPress={handleSnooze}
-          activeOpacity={0.7}
           disabled={snoozing || stopping}
+          style={({ pressed }) => [
+            styles.secondaryAction,
+            { borderColor: onField },
+            (pressed || snoozing) && styles.actionPressed,
+          ]}
         >
           {snoozing ? (
-            <ActivityIndicator size="small" color={COLORS.white} />
+            <ActivityIndicator size="small" color={onField} />
           ) : (
             <>
-              <Ionicons name="time-outline" size={26} color={COLORS.white} />
-              <Text style={styles.snoozeButtonText}>Posponer 5 minutos</Text>
+              <Ionicons name="time-outline" size={28} color={onField} />
+              <Text variant="labelLarge" color={onField}>
+                Posponer 5 minutos
+              </Text>
             </>
           )}
-        </TouchableOpacity>
-      </View>
-      </SafeAreaView>
+        </Pressable>
+      </ScrollView>
     </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   container: {
     flex: 1,
   },
-  safeArea: {
+  loading: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: SPACING.md,
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
+    paddingHorizontal: SCREEN_MARGIN,
   },
-  // ─── Ícono de alarma ───
-  alarmIconContainer: {
-    marginBottom: SPACING.lg,
-  },
-  alarmIconOuter: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
+  // ─── Píldora de estado ───
+  alarmChip: {
+    flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 4,
-    borderColor: 'rgba(255,255,255,0.4)',
-  },
-  // ─── Texto ───
-  title: {
-    fontSize: 36,
-    fontFamily: FONTS.family.extraBold,
-    color: COLORS.white,
-    textAlign: 'center',
-    marginBottom: SPACING.lg,
-    lineHeight: 44,
-  },
-  // ─── Tarjeta de medicamento ───
-  medCard: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: BORDER_RADIUS.lg,
-    paddingVertical: SPACING.lg,
+    gap: SPACING.sm,
     paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.md,
+    borderRadius: SHAPE.full,
+  },
+  // ─── Medicamento ───
+  medBlock: {
+    alignItems: 'center',
+    marginTop: SPACING.xxl,
+    marginBottom: SPACING.xxl,
+  },
+  photo: {
+    width: 132,
+    height: 132,
+    borderRadius: SHAPE.extraLarge,
+    marginBottom: SPACING.xl,
+  },
+  photoPlaceholder: {
+    width: 132,
+    height: 132,
+    borderRadius: SHAPE.extraLarge,
+    borderWidth: 2,
+    justifyContent: 'center',
     alignItems: 'center',
     marginBottom: SPACING.xl,
-    width: '100%',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  medEmoji: {
-    fontSize: 48,
-    marginBottom: SPACING.sm,
   },
   medName: {
-    fontSize: FONTS.sizeHero,
-    fontFamily: FONTS.family.extraBold,
-    color: COLORS.white,
-    textAlign: 'center',
+    marginBottom: SPACING.xs,
   },
-  medDose: {
-    fontSize: FONTS.sizeLarge,
-    fontFamily: FONTS.family.medium,
-    color: 'rgba(255,255,255,0.85)',
-    marginTop: 4,
-  },
-  medTime: {
-    fontSize: FONTS.sizeMedium,
-    fontFamily: FONTS.family.regular,
-    color: 'rgba(255,255,255,0.7)',
-    marginTop: 8,
-  },
-  // ─── Botón principal ───
-  stopButton: {
-    backgroundColor: COLORS.white,
-    borderRadius: BORDER_RADIUS.lg,
-    paddingVertical: SPACING.lg + 4,
-    paddingHorizontal: SPACING.xl,
+  // ─── Cola ───
+  queueBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    borderRadius: SHAPE.full,
+    borderWidth: 1,
+    marginBottom: SPACING.xl,
+  },
+  // ─── Acciones ───
+  primaryAction: {
     width: '100%',
-    minHeight: SCREEN_HEIGHT * 0.15,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    minHeight: 168,
+    borderRadius: SHAPE.extraLarge,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: SPACING.xl,
+    paddingHorizontal: SPACING.lg,
   },
-  stopButtonDisabled: {
-    opacity: 0.7,
-  },
-  stopButtonText: {
-    fontSize: 28,
-    fontFamily: FONTS.family.extraBold,
-    color: COLORS.danger,
+  primaryActionLabel: {
     marginTop: SPACING.sm,
   },
-  stopButtonSub: {
-    fontSize: FONTS.sizeMedium,
-    fontFamily: FONTS.family.medium,
-    color: COLORS.textSecondary,
-    marginTop: 4,
-  },
-  // ─── Botón secundario: Posponer ───
-  snoozeButton: {
+  secondaryAction: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: SPACING.sm,
-    marginTop: SPACING.lg,
-    minHeight: TOUCH_TARGET.minHeight,
+    gap: SPACING.md,
     width: '100%',
-    borderRadius: BORDER_RADIUS.lg,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    minHeight: TOUCH.primary,
+    borderRadius: SHAPE.full,
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.5)',
+    marginTop: SPACING.lg,
   },
-  snoozeButtonText: {
-    fontSize: FONTS.sizeLarge,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.white,
+  actionPressed: {
+    opacity: 0.85,
   },
 });

@@ -1,32 +1,44 @@
-import { useAppAlert } from '@/components/AppAlert';
+import { useFeedback } from '@/components/Feedback';
 import Button from '@/components/ui/Button';
-import Card from '@/components/ui/Card';
 import IconBadge from '@/components/ui/IconBadge';
-import { BORDER_RADIUS, COLORS, FONTS, GRADIENTS, SPACING } from '@/lib/theme';
+import Surface from '@/components/ui/Surface';
+import Text from '@/components/ui/Text';
+import TopAppBar from '@/components/ui/TopAppBar';
+import { useTheme, useThemedStyles } from '@/context/ThemeContext';
+import { ColorScheme, SCREEN_MARGIN, SHAPE, SPACING, elevation } from '@/lib/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as IntentLauncher from 'expo-intent-launcher';
 import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Guía de permisos.
+//
+// Es una pantalla de configuración que se abre en el primer inicio de sesión, y
+// por eso su forma es una LISTA DE PASOS con estado —no tres tarjetas sueltas.
+// Cada paso muestra si ya está hecho con forma y color a la vez (palomita en
+// contenedor verde / círculo vacío), igual que el semáforo de dosis, para que
+// "¿ya quedó?" se responda sin leer.
+//
+// La acción principal vive en una barra fija abajo: es la única cosa que esta
+// pantalla necesita que pase.
+// ─────────────────────────────────────────────────────────────────────────────
 
 const PACKAGE_URI = 'package:com.pastilleroapp.app';
 const PREVIEW_DURATION_MS = 3000;
 
 export default function PermissionsGuideScreen() {
   const router = useRouter();
-  const { alert } = useAppAlert();
+  const { scheme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const insets = useSafeAreaInsets();
+  const { alert, snack } = useFeedback();
+
   const [notifGranted, setNotifGranted] = useState<boolean | null>(null);
   const [requesting, setRequesting] = useState(false);
   const [requestedAll, setRequestedAll] = useState(false);
@@ -72,7 +84,7 @@ export default function PermissionsGuideScreen() {
     } catch (e) {
       console.log('Error reproduciendo vista previa:', e);
       setPreviewing(false);
-      alert('No se pudo reproducir', 'No se pudo escuchar el sonido de la alarma en este dispositivo.');
+      snack('No se pudo reproducir el sonido en este dispositivo.', { tone: 'error' });
     }
   };
 
@@ -127,311 +139,255 @@ export default function PermissionsGuideScreen() {
       }
 
       setRequestedAll(true);
-      alert('✅ ¡Listo!', 'Ya se configuraron los permisos. Si tu teléfono mostró alguna pantalla adicional, solo tenías que tocar "Permitir".');
+      snack('Permisos configurados. Tus alarmas ya pueden sonar.', { tone: 'success' });
     } finally {
       setRequesting(false);
     }
   };
 
-  const openAppSettingsScreen = () => {
-    Linking.openSettings().catch(() => {});
+  const handleDone = () => {
+    if (!notifGranted) {
+      alert(
+        'Falta un permiso importante',
+        'Sin el permiso de notificaciones la app no va a poder avisarte de tus medicamentos.',
+        [
+          { text: 'Activar ahora', onPress: activateEverything },
+          { text: 'Continuar sin activar', style: 'destructive', onPress: () => router.back() },
+        ]
+      );
+      return;
+    }
+    router.back();
   };
 
+  const steps: { done: boolean; title: string; detail: string }[] = [
+    {
+      done: notifGranted === true,
+      title: 'Notificaciones',
+      detail: 'Para que la app pueda avisarte cuando toca una dosis.',
+    },
+    {
+      done: requestedAll,
+      title: 'Batería sin restricciones',
+      detail: 'Para que el teléfono no apague la app mientras espera la hora.',
+    },
+    {
+      done: requestedAll,
+      title: 'Alarmas exactas',
+      detail: 'Para que suene a la hora justa y no unos minutos después.',
+    },
+  ];
+
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      {/* Header */}
-      <LinearGradient colors={GRADIENTS.primary} style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="arrow-back" size={28} color={COLORS.white} />
-        </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerEmoji}>🔒</Text>
-          <Text style={styles.headerTitle}>Activar alarmas</Text>
-          <Text style={styles.headerSubtitle}>
-            Un solo paso para que la alarma nunca falle
-          </Text>
-        </View>
-      </LinearGradient>
+    <View style={styles.container}>
+      <TopAppBar
+        title="Activar las alarmas"
+        subtitle="Un solo paso para que nunca falle"
+        onBack={() => router.back()}
+      />
 
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* Tarjeta principal — un solo botón hace todo */}
-        <Card style={styles.mainCard}>
-          <IconBadge name="notifications" color={COLORS.primary} backgroundColor={COLORS.primaryBg} size={72} iconSize={34} />
-          <Text style={styles.mainTitle}>Toca el botón</Text>
-          <Text style={styles.mainDescription}>
-            Van a aparecer 2 o 3 ventanas de tu teléfono preguntando permiso.{'\n'}
-            Solo toca <Text style={styles.bold}>"Permitir"</Text> en cada una.
+        {/* ─── Los tres permisos, con su estado ─── */}
+        <Text variant="labelMedium" tone="variant" style={styles.groupLabel}>
+          LO QUE HAY QUE PERMITIR
+        </Text>
+        <Surface level={1} padded>
+          {steps.map((step, index) => (
+            <View key={step.title} style={[styles.step, index > 0 && styles.stepGap]}>
+              <View
+                style={[
+                  styles.stepMark,
+                  { backgroundColor: step.done ? scheme.successContainer : scheme.surfaceVariant },
+                ]}
+              >
+                <Ionicons
+                  name={step.done ? 'checkmark' : 'ellipse-outline'}
+                  size={24}
+                  color={step.done ? scheme.onSuccessContainer : scheme.onSurfaceVariant}
+                />
+              </View>
+              <View style={styles.flex}>
+                <Text variant="titleSmall">{step.title}</Text>
+                <Text variant="bodySmall" tone="variant">
+                  {step.detail}
+                </Text>
+                <Text
+                  variant="labelSmall"
+                  color={step.done ? scheme.success : scheme.onSurfaceMuted}
+                  style={styles.stepState}
+                >
+                  {step.done ? 'Listo' : 'Pendiente'}
+                </Text>
+              </View>
+            </View>
+          ))}
+
+          <Text variant="bodySmall" tone="variant" style={styles.stepsHint}>
+            Al tocar el botón van a aparecer 2 o 3 ventanas del teléfono. En todas hay que tocar
+            &quot;Permitir&quot;.
           </Text>
+        </Surface>
 
-          <Button
-            title={requestedAll ? 'Volver a activar' : 'Activar todo'}
-            icon={requestedAll ? 'refresh' : 'shield-checkmark'}
-            onPress={activateEverything}
-            loading={requesting}
-            style={styles.activateButton}
-          />
-
-          <View style={styles.statusRow}>
-            <Ionicons
-              name={notifGranted ? 'checkmark-circle' : 'ellipse-outline'}
-              size={22}
-              color={notifGranted ? COLORS.success : COLORS.textLight}
+        {/* ─── Escuchar la alarma antes de que sea real ─── */}
+        <Text variant="labelMedium" tone="variant" style={styles.groupLabel}>
+          ANTES DE EMPEZAR
+        </Text>
+        <Surface level={1} padded style={styles.group}>
+          <View style={styles.cardHeader}>
+            <IconBadge
+              name="volume-high"
+              color={scheme.onWarningContainer}
+              backgroundColor={scheme.warningContainer}
+              size={48}
             />
-            <Text style={[styles.statusText, notifGranted && styles.statusTextDone]}>
-              Notificaciones {notifGranted ? 'activadas' : 'pendientes'}
-            </Text>
-          </View>
-          {requestedAll && (
-            <View style={styles.statusRow}>
-              <Ionicons name="checkmark-circle" size={22} color={COLORS.success} />
-              <Text style={[styles.statusText, styles.statusTextDone]}>
-                Batería y alarmas configuradas
+            <View style={styles.flex}>
+              <Text variant="titleSmall">¿Cómo suena la alarma?</Text>
+              <Text variant="bodySmall" tone="variant">
+                Escúchala ahora para que no te sorprenda la primera vez.
               </Text>
             </View>
-          )}
-        </Card>
-
-        {/* Escuchar cómo suena la alarma antes de que sea real */}
-        <Card style={styles.previewCard}>
-          <View style={styles.extraHeader}>
-            <IconBadge name="volume-high" color={COLORS.warning} backgroundColor={COLORS.warningLight} size={40} iconSize={20} />
-            <Text style={styles.extraTitle}>¿Cómo suena la alarma?</Text>
           </View>
-          <Text style={styles.extraText}>
-            Escúchala ahora para que no te tome por sorpresa la primera vez.
-          </Text>
-          <TouchableOpacity
-            style={[styles.extraButton, previewing && styles.previewButtonActive]}
+          <Button
+            title={previewing ? 'Detener el sonido' : 'Escuchar el sonido'}
+            icon={previewing ? 'stop-circle' : 'play-circle-outline'}
+            variant={previewing ? 'tonal' : 'outlined'}
             onPress={handlePreviewSound}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.extraButtonText, previewing && styles.previewButtonTextActive]}>
-              {previewing ? 'Detener' : 'Escuchar sonido'}
-            </Text>
-            <Ionicons
-              name={previewing ? 'stop-circle' : 'play-circle-outline'}
-              size={20}
-              color={previewing ? COLORS.white : COLORS.secondary}
+            style={styles.cardAction}
+          />
+        </Surface>
+
+        {/* ─── Nota para teléfonos con restricciones extra ─── */}
+        <Surface level={1} padded style={styles.group}>
+          <View style={styles.cardHeader}>
+            <IconBadge
+              name="phone-portrait"
+              color={scheme.secondary}
+              backgroundColor={scheme.secondaryContainer}
+              size={48}
             />
-          </TouchableOpacity>
-        </Card>
-
-        {/* Nota para teléfonos con restricciones extra (Xiaomi, Samsung, etc.) */}
-        <Card style={styles.extraCard}>
-          <View style={styles.extraHeader}>
-            <IconBadge name="phone-portrait" color={COLORS.secondary} backgroundColor={COLORS.secondaryLight} size={40} iconSize={20} />
-            <Text style={styles.extraTitle}>¿Xiaomi, Redmi, Samsung o Huawei?</Text>
+            <View style={styles.flex}>
+              <Text variant="titleSmall">¿Xiaomi, Redmi, Samsung o Huawei?</Text>
+              <Text variant="bodySmall" tone="variant">
+                Estas marcas tienen un ajuste extra que no se puede abrir desde aquí. Es mejor que lo
+                configure un familiar una sola vez.
+              </Text>
+            </View>
           </View>
-          <Text style={styles.extraText}>
-            Algunas marcas tienen un ajuste extra llamado "Inicio automático" que no se puede
-            abrir directamente. Es mejor que lo configure un familiar una sola vez:
-          </Text>
-          <Text style={styles.extraSteps}>
-            Ajustes del teléfono → Apps → PastilleroApp → Permisos → activar "Inicio automático"
-          </Text>
-          <TouchableOpacity style={styles.extraButton} onPress={openAppSettingsScreen} activeOpacity={0.7}>
-            <Text style={styles.extraButtonText}>Abrir ajustes de la app</Text>
-            <Ionicons name="open-outline" size={20} color={COLORS.secondary} />
-          </TouchableOpacity>
-        </Card>
 
-        {/* Botón: Ya terminé */}
-        <TouchableOpacity
-          style={styles.doneButton}
-          onPress={() => {
-            if (!notifGranted) {
-              alert(
-                '⚠️ Falta un permiso importante',
-                'Las notificaciones no están activadas. Sin ellas la app NO podrá avisarte de tus medicamentos.',
-                [
-                  { text: 'Activar ahora', onPress: activateEverything },
-                  { text: 'Continuar sin activar', onPress: () => router.back(), style: 'destructive' },
-                ]
-              );
-            } else {
-              router.back();
-            }
-          }}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="checkmark-done-circle" size={32} color={COLORS.white} />
-          <Text style={styles.doneButtonText}>YA TERMINÉ</Text>
-        </TouchableOpacity>
+          <View style={[styles.path, { backgroundColor: scheme.surfaceContainer }]}>
+            <Text variant="labelSmall" tone="variant">
+              RUTA EN LOS AJUSTES
+            </Text>
+            <Text variant="bodySmall" style={styles.pathText}>
+              Ajustes → Apps → PastilleroApp → Permisos → activar &quot;Inicio automático&quot;
+            </Text>
+          </View>
 
-        <View style={{ height: 40 }} />
+          <Button
+            title="Abrir ajustes de la app"
+            icon="open-outline"
+            iconTrailing
+            variant="outlined"
+            onPress={() => Linking.openSettings().catch(() => {})}
+            style={styles.cardAction}
+          />
+        </Surface>
       </ScrollView>
-    </SafeAreaView>
+
+      {/* La única acción que esta pantalla necesita, siempre alcanzable. */}
+      <View
+        style={[
+          styles.actionBar,
+          {
+            backgroundColor: scheme.surfaceContainer,
+            borderTopColor: scheme.outlineVariant,
+            paddingBottom: insets.bottom + SPACING.lg,
+          },
+          elevation(2, scheme),
+        ]}
+      >
+        <Button
+          title={requestedAll ? 'Volver a activar' : 'Activar todo'}
+          icon={requestedAll ? 'refresh' : 'shield-checkmark'}
+          emphasis
+          loading={requesting}
+          onPress={activateEverything}
+        />
+        <Button title="Ya terminé" variant="text" onPress={handleDone} style={styles.doneButton} />
+      </View>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  header: {
-    paddingBottom: SPACING.lg,
-    borderBottomLeftRadius: BORDER_RADIUS.xl,
-    borderBottomRightRadius: BORDER_RADIUS.xl,
-  },
-  backButton: {
-    position: 'absolute',
-    top: SPACING.md,
-    left: SPACING.md,
-    zIndex: 10,
-    padding: SPACING.sm,
-  },
-  headerContent: {
-    alignItems: 'center',
-    paddingTop: SPACING.xl,
-    paddingHorizontal: SPACING.lg,
-  },
-  headerEmoji: {
-    fontSize: 48,
-    marginBottom: SPACING.sm,
-  },
-  headerTitle: {
-    fontSize: FONTS.sizeTitle,
-    fontFamily: FONTS.family.extraBold,
-    color: COLORS.white,
-    textAlign: 'center',
-  },
-  headerSubtitle: {
-    fontSize: FONTS.sizeMedium,
-    fontFamily: FONTS.family.medium,
-    color: 'rgba(255,255,255,0.85)',
-    textAlign: 'center',
-    marginTop: SPACING.sm,
-    lineHeight: 28,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: SPACING.md,
-  },
-  bold: {
-    fontFamily: FONTS.family.bold,
-    color: COLORS.text,
-  },
-  // ─── Tarjeta principal ───
-  mainCard: {
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-    paddingVertical: SPACING.xl,
-  },
-  mainTitle: {
-    fontSize: FONTS.sizeXLarge,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.text,
-    marginTop: SPACING.md,
-  },
-  mainDescription: {
-    fontSize: FONTS.sizeMedium,
-    fontFamily: FONTS.family.regular,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    lineHeight: 28,
-    marginTop: SPACING.sm,
-    marginBottom: SPACING.lg,
-  },
-  activateButton: {
-    width: '100%',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    marginTop: SPACING.md,
-  },
-  statusText: {
-    fontSize: FONTS.sizeMedium,
-    fontFamily: FONTS.family.semiBold,
-    color: COLORS.textLight,
-  },
-  statusTextDone: {
-    color: COLORS.success,
-  },
-  // ─── Nota OEM ───
-  extraCard: {
-    marginBottom: SPACING.lg,
-  },
-  previewCard: {
-    marginBottom: SPACING.md,
-  },
-  previewButtonActive: {
-    backgroundColor: COLORS.secondary,
-  },
-  previewButtonTextActive: {
-    color: COLORS.white,
-  },
-  extraHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    marginBottom: SPACING.sm,
-  },
-  extraTitle: {
-    flex: 1,
-    fontSize: FONTS.sizeMedium,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.text,
-  },
-  extraText: {
-    fontSize: FONTS.sizeSmall,
-    fontFamily: FONTS.family.regular,
-    color: COLORS.textSecondary,
-    lineHeight: 24,
-    marginBottom: SPACING.sm,
-  },
-  extraSteps: {
-    fontSize: FONTS.sizeSmall,
-    fontFamily: FONTS.family.semiBold,
-    color: COLORS.secondary,
-    backgroundColor: COLORS.secondaryLight,
-    borderRadius: BORDER_RADIUS.sm,
-    padding: SPACING.sm + 4,
-    lineHeight: 22,
-    marginBottom: SPACING.md,
-  },
-  extraButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-    borderWidth: 1.5,
-    borderColor: COLORS.secondary,
-    borderRadius: BORDER_RADIUS.md,
-    paddingVertical: SPACING.sm + 4,
-  },
-  extraButtonText: {
-    fontSize: FONTS.sizeSmall,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.secondary,
-  },
-  // ─── Botón final ───
-  doneButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: BORDER_RADIUS.lg,
-    paddingVertical: SPACING.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.md,
-    minHeight: 80,
-    elevation: 4,
-  },
-  doneButtonText: {
-    fontSize: FONTS.sizeXLarge,
-    fontFamily: FONTS.family.extraBold,
-    color: COLORS.white,
-  },
-});
+const makeStyles = (t: ColorScheme) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: t.background,
+    },
+    flex: {
+      flex: 1,
+    },
+    scroll: {
+      paddingHorizontal: SCREEN_MARGIN,
+      paddingBottom: SPACING.xxl,
+    },
+    groupLabel: {
+      marginTop: SPACING.xl,
+      marginBottom: SPACING.md,
+    },
+    group: {
+      marginBottom: SPACING.md,
+    },
+    // ─── Pasos ───
+    step: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: SPACING.lg,
+    },
+    stepGap: {
+      marginTop: SPACING.xl,
+    },
+    stepMark: {
+      width: 48,
+      height: 48,
+      borderRadius: SHAPE.full,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    stepState: {
+      marginTop: SPACING.xs,
+    },
+    stepsHint: {
+      marginTop: SPACING.xl,
+    },
+    // ─── Tarjetas ───
+    cardHeader: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: SPACING.lg,
+    },
+    cardAction: {
+      marginTop: SPACING.lg,
+    },
+    path: {
+      borderRadius: SHAPE.medium,
+      padding: SPACING.lg,
+      marginTop: SPACING.lg,
+    },
+    pathText: {
+      marginTop: SPACING.xs,
+    },
+    // ─── Barra de acción ───
+    actionBar: {
+      paddingHorizontal: SCREEN_MARGIN,
+      paddingTop: SPACING.lg,
+      borderTopWidth: StyleSheet.hairlineWidth,
+    },
+    doneButton: {
+      marginTop: SPACING.xs,
+    },
+  });

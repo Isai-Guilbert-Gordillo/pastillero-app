@@ -8,6 +8,11 @@ export interface Medication {
   start_time: string; // HH:mm format
   days_of_week: string[]; // e.g. ['mon','tue','wed','thu','fri','sat','sun']
   notification_ids: string[]; // IDs de notificaciones programadas en expo-notifications
+  regimen_type: 'indefinido' | 'por_tiempo'; // 'indefinido' = crónico, sin fin. 'por_tiempo' = duración fija (ej. antibiótico)
+  duration_days: number | null; // solo si regimen_type = 'por_tiempo'
+  end_date: string | null; // YYYY-MM-DD, created_at + duration_days. Solo si regimen_type = 'por_tiempo'
+  has_native_alarm: boolean; // la app cree que existe una alarma activa en el Reloj del teléfono
+  native_alarm_cleanup_pending: boolean; // puede quedar una alarma vieja del Reloj sin borrar — mostrar recordatorio persistente
   created_at: string;
   active: boolean;
 }

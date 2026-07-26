@@ -1,21 +1,34 @@
+import Button from '@/components/ui/Button';
+import Surface from '@/components/ui/Surface';
+import Text from '@/components/ui/Text';
+import TextField from '@/components/ui/TextField';
+import { useAuth } from '@/context/AuthContext';
+import { useTheme, useThemedStyles } from '@/context/ThemeContext';
+import { ColorScheme, SCREEN_MARGIN, SHAPE, SPACING, TOUCH } from '@/lib/theme';
+import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import { useAuth } from '@/context/AuthContext';
-import { COLORS, FONTS, SPACING, BORDER_RADIUS, TOUCH_TARGET, GRADIENTS, SHADOWS } from '@/lib/theme';
-import Button from '@/components/ui/Button';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Entrada a la app.
+//
+// La primera pantalla ya no es un emoji de 56px dentro de un círculo con
+// degradado. Es la marca dicha en serio —una píldora dibujada con el ícono del
+// sistema dentro del contenedor primario— y debajo, una sola cosa que hacer.
+//
+// Los campos usan el mismo TextField outlined que el resto de la app, con la
+// etiqueta arriba y quieta, y el error bajo el campo que lo causó. Antes cada
+// pantalla tenía su propio estilo de input; ahora entrar a la app se ve como
+// usar la app.
+// ─────────────────────────────────────────────────────────────────────────────
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 6;
@@ -38,6 +51,10 @@ type AuthView = 'form' | 'forgot-request' | 'forgot-confirm';
 
 export default function LoginScreen() {
   const { signIn, signUp, requestPasswordReset, confirmPasswordReset } = useAuth();
+  const { scheme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const insets = useSafeAreaInsets();
+
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -72,7 +89,7 @@ export default function LoginScreen() {
     if (!isLogin) {
       const trimmedName = fullName.trim();
       if (!trimmedName) {
-        nextErrors.fullName = 'Ingresa tu nombre.';
+        nextErrors.fullName = 'Escribe tu nombre.';
       } else if (trimmedName.length < 2) {
         nextErrors.fullName = 'El nombre es demasiado corto.';
       }
@@ -80,22 +97,22 @@ export default function LoginScreen() {
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
-      nextErrors.email = 'Ingresa tu correo electrónico.';
+      nextErrors.email = 'Escribe tu correo electrónico.';
     } else if (!EMAIL_REGEX.test(trimmedEmail)) {
-      nextErrors.email = 'Ingresa un correo electrónico válido.';
+      nextErrors.email = 'Ese correo no parece completo. Revisa que tenga @ y un punto.';
     }
 
     if (!password) {
-      nextErrors.password = 'Ingresa tu contraseña.';
+      nextErrors.password = 'Escribe tu contraseña.';
     } else if (password.length < MIN_PASSWORD_LENGTH) {
-      nextErrors.password = `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.`;
+      nextErrors.password = `La contraseña necesita al menos ${MIN_PASSWORD_LENGTH} caracteres.`;
     }
 
     if (!isLogin) {
       if (!confirmPassword) {
-        nextErrors.confirmPassword = 'Confirma tu contraseña.';
+        nextErrors.confirmPassword = 'Repite tu contraseña.';
       } else if (confirmPassword !== password) {
-        nextErrors.confirmPassword = 'Las contraseñas no coinciden.';
+        nextErrors.confirmPassword = 'Las dos contraseñas no son iguales.';
       }
     }
 
@@ -134,7 +151,7 @@ export default function LoginScreen() {
     if (!needsEmailConfirmation) {
       // Ya quedó con sesión activa — el layout raíz va a detectarla y entrar
       // solo a la app en un momento. No hace falta tocar el formulario.
-      setFormNotice({ type: 'success', text: '¡Cuenta creada! Entrando...' });
+      setFormNotice({ type: 'success', text: '¡Cuenta creada! Entrando…' });
       return;
     }
 
@@ -182,11 +199,11 @@ export default function LoginScreen() {
     setResetNotice(null);
     const trimmedEmail = resetEmail.trim();
     if (!trimmedEmail) {
-      setResetErrors({ email: 'Ingresa tu correo electrónico.' });
+      setResetErrors({ email: 'Escribe tu correo electrónico.' });
       return;
     }
     if (!EMAIL_REGEX.test(trimmedEmail)) {
-      setResetErrors({ email: 'Ingresa un correo electrónico válido.' });
+      setResetErrors({ email: 'Ese correo no parece completo. Revisa que tenga @ y un punto.' });
       return;
     }
     setResetErrors({});
@@ -210,7 +227,7 @@ export default function LoginScreen() {
     const { error } = await requestPasswordReset(resetEmail.trim().toLowerCase());
     setResetLoading(false);
     setResetNotice(
-      error ? { type: 'error', text: error } : { type: 'success', text: 'Te enviamos un nuevo código a tu correo.' }
+      error ? { type: 'error', text: error } : { type: 'success', text: 'Te enviamos un código nuevo a tu correo.' }
     );
   };
 
@@ -220,19 +237,19 @@ export default function LoginScreen() {
     const trimmedCode = resetCode.trim();
 
     if (!trimmedCode) {
-      nextErrors.code = 'Ingresa el código que te enviamos.';
+      nextErrors.code = 'Escribe el código que te enviamos por correo.';
     } else if (trimmedCode.length < 4) {
-      nextErrors.code = 'Revisa el código, parece incompleto.';
+      nextErrors.code = 'El código parece incompleto. Revísalo en tu correo.';
     }
     if (!newPassword) {
-      nextErrors.newPassword = 'Ingresa tu nueva contraseña.';
+      nextErrors.newPassword = 'Escribe tu nueva contraseña.';
     } else if (newPassword.length < MIN_PASSWORD_LENGTH) {
-      nextErrors.newPassword = `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.`;
+      nextErrors.newPassword = `La contraseña necesita al menos ${MIN_PASSWORD_LENGTH} caracteres.`;
     }
     if (!confirmNewPassword) {
-      nextErrors.confirmNewPassword = 'Confirma tu nueva contraseña.';
+      nextErrors.confirmNewPassword = 'Repite tu nueva contraseña.';
     } else if (confirmNewPassword !== newPassword) {
-      nextErrors.confirmNewPassword = 'Las contraseñas no coinciden.';
+      nextErrors.confirmNewPassword = 'Las dos contraseñas no son iguales.';
     }
 
     setResetErrors(nextErrors);
@@ -250,236 +267,196 @@ export default function LoginScreen() {
     // detecta el usuario autenticado y navega solo a la app principal.
   };
 
+  const EyeToggle = ({ shown, onToggle }: { shown: boolean; onToggle: () => void }) => (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={shown ? 'Ocultar la contraseña' : 'Mostrar la contraseña'}
+      onPress={onToggle}
+      hitSlop={8}
+      style={styles.eye}
+    >
+      <Ionicons
+        name={shown ? 'eye-off-outline' : 'eye-outline'}
+        size={26}
+        color={scheme.onSurfaceVariant}
+      />
+    </Pressable>
+  );
+
+  const Notice = ({ notice }: { notice: { type: 'error' | 'success'; text: string } }) => (
+    <View
+      accessibilityRole="alert"
+      style={[
+        styles.notice,
+        {
+          backgroundColor: notice.type === 'success' ? scheme.successContainer : scheme.errorContainer,
+        },
+      ]}
+    >
+      <Ionicons
+        name={notice.type === 'success' ? 'checkmark-circle' : 'alert-circle'}
+        size={26}
+        color={notice.type === 'success' ? scheme.onSuccessContainer : scheme.onErrorContainer}
+      />
+      <Text
+        variant="bodySmall"
+        tone={notice.type === 'success' ? 'onSuccessContainer' : 'onErrorContainer'}
+        style={styles.noticeText}
+      >
+        {notice.text}
+      </Text>
+    </View>
+  );
+
+  const formTitle =
+    authView === 'form'
+      ? isLogin ? 'Iniciar sesión' : 'Crear cuenta'
+      : authView === 'forgot-request' ? 'Recuperar contraseña'
+      : 'Escribe el código';
+
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.flex}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingTop: insets.top + SPACING.xxl, paddingBottom: insets.bottom + SPACING.xxl },
+          ]}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          {/* Header */}
-          <Animated.View entering={FadeInDown.duration(400)} style={styles.header}>
-            <LinearGradient colors={GRADIENTS.primary} style={styles.iconContainer}>
-              <Text style={styles.iconEmoji}>💊</Text>
-            </LinearGradient>
-            <Text style={styles.title}>PastilleroApp</Text>
-            <Text style={styles.subtitle}>Tu recordatorio de medicamentos</Text>
-          </Animated.View>
+          {/* ─── Marca ─── */}
+          <View style={styles.brand}>
+            <View style={[styles.mark, { backgroundColor: scheme.primaryContainer }]}>
+              <Ionicons name="medical" size={44} color={scheme.onPrimaryContainer} />
+            </View>
+            <Text variant="displaySmall" tone="primary" center style={styles.brandName}>
+              PastilleroApp
+            </Text>
+            <Text variant="bodyMedium" tone="variant" center>
+              Tu medicina suena a su hora, aunque la app esté cerrada
+            </Text>
+          </View>
 
-          {/* Form */}
-          <Animated.View entering={FadeInUp.duration(450).delay(100)} style={styles.form}>
-            <Text style={styles.formTitle}>
-              {authView === 'form'
-                ? (isLogin ? 'Iniciar Sesión' : 'Crear Cuenta')
-                : authView === 'forgot-request'
-                ? 'Recuperar contraseña'
-                : 'Escribe el código'}
+          {/* ─── Formulario ─── */}
+          <Surface level={1} padded>
+            <Text variant="headlineSmall" style={styles.formTitle}>
+              {formTitle}
             </Text>
 
-            {authView === 'form' && formNotice && (
-              <View
-                style={[
-                  styles.formMessage,
-                  formNotice.type === 'success' ? styles.formMessageSuccess : styles.formMessageError,
-                ]}
-              >
-                <Ionicons
-                  name={formNotice.type === 'success' ? 'checkmark-circle-outline' : 'alert-circle-outline'}
-                  size={24}
-                  color={formNotice.type === 'success' ? COLORS.success : COLORS.danger}
-                  style={styles.formMessageIcon}
-                />
-                <Text
-                  style={[
-                    styles.formMessageText,
-                    { color: formNotice.type === 'success' ? COLORS.success : COLORS.danger },
-                  ]}
-                >
-                  {formNotice.text}
-                </Text>
-              </View>
-            )}
+            {authView === 'form' && formNotice && <Notice notice={formNotice} />}
+            {authView !== 'form' && resetNotice && <Notice notice={resetNotice} />}
 
-            {authView !== 'form' && resetNotice && (
-              <View
-                style={[
-                  styles.formMessage,
-                  resetNotice.type === 'success' ? styles.formMessageSuccess : styles.formMessageError,
-                ]}
-              >
-                <Ionicons
-                  name={resetNotice.type === 'success' ? 'checkmark-circle-outline' : 'alert-circle-outline'}
-                  size={24}
-                  color={resetNotice.type === 'success' ? COLORS.success : COLORS.danger}
-                  style={styles.formMessageIcon}
-                />
-                <Text
-                  style={[
-                    styles.formMessageText,
-                    { color: resetNotice.type === 'success' ? COLORS.success : COLORS.danger },
-                  ]}
-                >
-                  {resetNotice.text}
-                </Text>
-              </View>
-            )}
-
+            {/* ─── Pedir código ─── */}
             {authView === 'forgot-request' && (
               <>
-                <Text style={styles.helperText}>
-                  Escribe tu correo y te mandamos un código por correo para poner una contraseña nueva.
+                <Text variant="bodySmall" tone="variant" style={styles.helper}>
+                  Escribe tu correo y te mandamos un código para poner una contraseña nueva.
                 </Text>
 
-                <Text style={styles.inputLabel}>Correo electrónico</Text>
-                <View style={[styles.inputContainer, resetErrors.email && styles.inputContainerError]}>
-                  <Ionicons name="mail-outline" size={26} color={COLORS.textSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="tucorreo@ejemplo.com"
-                    placeholderTextColor={COLORS.textLight}
-                    value={resetEmail}
-                    onChangeText={(text) => {
-                      setResetEmail(text);
-                      clearResetFieldError('email');
-                    }}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!resetLoading}
-                  />
-                </View>
-                {resetErrors.email && <Text style={styles.errorText}>{resetErrors.email}</Text>}
+                <TextField
+                  label="Correo electrónico"
+                  placeholder="tucorreo@ejemplo.com"
+                  value={resetEmail}
+                  onChangeText={(text) => {
+                    setResetEmail(text);
+                    clearResetFieldError('email');
+                  }}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!resetLoading}
+                  error={resetErrors.email}
+                  leadingIcon={<Ionicons name="mail-outline" size={26} color={scheme.onSurfaceVariant} />}
+                />
 
                 <Button
                   title="Enviar código"
+                  icon="paper-plane-outline"
+                  emphasis
                   onPress={handleRequestReset}
                   loading={resetLoading}
-                  style={styles.submitButton}
+                  style={styles.submit}
                 />
-
-                <TouchableOpacity
-                  onPress={backToLogin}
-                  style={styles.switchButton}
-                  activeOpacity={0.7}
-                  disabled={resetLoading}
-                >
-                  <Text style={styles.switchText}>Volver a iniciar sesión</Text>
-                </TouchableOpacity>
+                <Button title="Volver a iniciar sesión" variant="text" onPress={backToLogin} />
               </>
             )}
 
+            {/* ─── Confirmar código ─── */}
             {authView === 'forgot-confirm' && (
               <>
-                <Text style={styles.helperText}>
-                  Te enviamos un código a {resetEmail}. Escríbelo aquí junto con tu nueva contraseña.
+                <Text variant="bodySmall" tone="variant" style={styles.helper}>
+                  Te enviamos un código a {resetEmail}. Escríbelo aquí junto con tu contraseña nueva.
                 </Text>
 
-                <Text style={styles.inputLabel}>Código del correo</Text>
-                <View style={[styles.inputContainer, resetErrors.code && styles.inputContainerError]}>
-                  <Ionicons name="key-outline" size={26} color={COLORS.textSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Código que te llegó por correo"
-                    placeholderTextColor={COLORS.textLight}
-                    value={resetCode}
-                    onChangeText={(text) => {
-                      setResetCode(text.replace(/[^0-9]/g, '').slice(0, 10));
-                      clearResetFieldError('code');
-                    }}
-                    keyboardType="number-pad"
-                    editable={!resetLoading}
-                  />
-                </View>
-                {resetErrors.code && <Text style={styles.errorText}>{resetErrors.code}</Text>}
+                <TextField
+                  label="Código del correo"
+                  placeholder="123456"
+                  value={resetCode}
+                  onChangeText={(text) => {
+                    setResetCode(text.replace(/[^0-9]/g, '').slice(0, 10));
+                    clearResetFieldError('code');
+                  }}
+                  keyboardType="number-pad"
+                  editable={!resetLoading}
+                  error={resetErrors.code}
+                  leadingIcon={<Ionicons name="key-outline" size={26} color={scheme.onSurfaceVariant} />}
+                />
 
-                <Text style={styles.inputLabel}>Nueva contraseña</Text>
-                <View style={[styles.inputContainer, resetErrors.newPassword && styles.inputContainerError]}>
-                  <Ionicons name="lock-closed-outline" size={26} color={COLORS.textSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Mínimo 6 caracteres"
-                    placeholderTextColor={COLORS.textLight}
-                    value={newPassword}
-                    onChangeText={(text) => {
-                      setNewPassword(text);
-                      clearResetFieldError('newPassword');
-                    }}
-                    secureTextEntry={!showNewPassword}
-                    editable={!resetLoading}
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowNewPassword(!showNewPassword)}
-                    style={styles.eyeIcon}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  >
-                    <Ionicons
-                      name={showNewPassword ? 'eye-off-outline' : 'eye-outline'}
-                      size={26}
-                      color={COLORS.textSecondary}
-                    />
-                  </TouchableOpacity>
-                </View>
-                {resetErrors.newPassword && <Text style={styles.errorText}>{resetErrors.newPassword}</Text>}
+                <TextField
+                  label="Nueva contraseña"
+                  placeholder="Mínimo 6 caracteres"
+                  value={newPassword}
+                  onChangeText={(text) => {
+                    setNewPassword(text);
+                    clearResetFieldError('newPassword');
+                  }}
+                  secureTextEntry={!showNewPassword}
+                  editable={!resetLoading}
+                  error={resetErrors.newPassword}
+                  leadingIcon={<Ionicons name="lock-closed-outline" size={26} color={scheme.onSurfaceVariant} />}
+                  trailing={<EyeToggle shown={showNewPassword} onToggle={() => setShowNewPassword(!showNewPassword)} />}
+                  style={styles.fieldGap}
+                />
 
-                <Text style={styles.inputLabel}>Confirmar nueva contraseña</Text>
-                <View style={[styles.inputContainer, resetErrors.confirmNewPassword && styles.inputContainerError]}>
-                  <Ionicons name="lock-closed-outline" size={26} color={COLORS.textSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Repite tu nueva contraseña"
-                    placeholderTextColor={COLORS.textLight}
-                    value={confirmNewPassword}
-                    onChangeText={(text) => {
-                      setConfirmNewPassword(text);
-                      clearResetFieldError('confirmNewPassword');
-                    }}
-                    secureTextEntry={!showNewPassword}
-                    editable={!resetLoading}
-                  />
-                </View>
-                {resetErrors.confirmNewPassword && (
-                  <Text style={styles.errorText}>{resetErrors.confirmNewPassword}</Text>
-                )}
+                <TextField
+                  label="Repite la nueva contraseña"
+                  placeholder="La misma de arriba"
+                  value={confirmNewPassword}
+                  onChangeText={(text) => {
+                    setConfirmNewPassword(text);
+                    clearResetFieldError('confirmNewPassword');
+                  }}
+                  secureTextEntry={!showNewPassword}
+                  editable={!resetLoading}
+                  error={resetErrors.confirmNewPassword}
+                  leadingIcon={<Ionicons name="lock-closed-outline" size={26} color={scheme.onSurfaceVariant} />}
+                  style={styles.fieldGap}
+                />
 
                 <Button
                   title="Cambiar contraseña"
+                  icon="checkmark-circle"
+                  emphasis
                   onPress={handleConfirmReset}
                   loading={resetLoading}
-                  style={styles.submitButton}
+                  style={styles.submit}
                 />
-
-                <TouchableOpacity
-                  onPress={handleResendCode}
-                  style={styles.switchButton}
-                  activeOpacity={0.7}
-                  disabled={resetLoading}
-                >
-                  <Text style={styles.switchText}>¿No te llegó? Reenviar código</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={backToLogin}
-                  style={styles.switchButtonSecondary}
-                  activeOpacity={0.7}
-                  disabled={resetLoading}
-                >
-                  <Text style={styles.switchTextSecondary}>Volver a iniciar sesión</Text>
-                </TouchableOpacity>
+                <Button title="¿No te llegó? Reenviar código" variant="text" onPress={handleResendCode} />
+                <Button title="Volver a iniciar sesión" variant="text" onPress={backToLogin} />
               </>
             )}
 
-            {authView === 'form' && !isLogin && (
+            {/* ─── Entrar / registrarse ─── */}
+            {authView === 'form' && (
               <>
-                <Text style={styles.inputLabel}>Nombre completo</Text>
-                <View style={[styles.inputContainer, errors.fullName && styles.inputContainerError]}>
-                  <Ionicons name="person-outline" size={26} color={COLORS.textSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Ej. María González"
-                    placeholderTextColor={COLORS.textLight}
+                {!isLogin && (
+                  <TextField
+                    label="Nombre completo"
+                    placeholder="María González"
                     value={fullName}
                     onChangeText={(text) => {
                       setFullName(text);
@@ -488,292 +465,186 @@ export default function LoginScreen() {
                     autoCapitalize="words"
                     autoCorrect={false}
                     editable={!loading}
+                    error={errors.fullName}
+                    leadingIcon={<Ionicons name="person-outline" size={26} color={scheme.onSurfaceVariant} />}
+                    style={styles.fieldGapFirst}
                   />
-                </View>
-                {errors.fullName && <Text style={styles.errorText}>{errors.fullName}</Text>}
-              </>
-            )}
+                )}
 
-            {authView === 'form' && (
-              <>
-                <Text style={styles.inputLabel}>Correo electrónico</Text>
-                <View style={[styles.inputContainer, errors.email && styles.inputContainerError]}>
-                  <Ionicons name="mail-outline" size={26} color={COLORS.textSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="tucorreo@ejemplo.com"
-                    placeholderTextColor={COLORS.textLight}
-                    value={email}
-                    onChangeText={(text) => {
-                      setEmail(text);
-                      clearFieldError('email');
-                    }}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!loading}
-                  />
-                </View>
-                {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
+                <TextField
+                  label="Correo electrónico"
+                  placeholder="tucorreo@ejemplo.com"
+                  value={email}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    clearFieldError('email');
+                  }}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!loading}
+                  error={errors.email}
+                  leadingIcon={<Ionicons name="mail-outline" size={26} color={scheme.onSurfaceVariant} />}
+                  style={isLogin ? undefined : styles.fieldGap}
+                />
 
-                <Text style={styles.inputLabel}>Contraseña</Text>
-                <View style={[styles.inputContainer, errors.password && styles.inputContainerError]}>
-                  <Ionicons name="lock-closed-outline" size={26} color={COLORS.textSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Mínimo 6 caracteres"
-                    placeholderTextColor={COLORS.textLight}
-                    value={password}
-                    onChangeText={(text) => {
-                      setPassword(text);
-                      clearFieldError('password');
-                    }}
-                    secureTextEntry={!showPassword}
-                    editable={!loading}
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowPassword(!showPassword)}
-                    style={styles.eyeIcon}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  >
-                    <Ionicons
-                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                      size={26}
-                      color={COLORS.textSecondary}
-                    />
-                  </TouchableOpacity>
-                </View>
-                {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
+                <TextField
+                  label="Contraseña"
+                  placeholder="Mínimo 6 caracteres"
+                  value={password}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    clearFieldError('password');
+                  }}
+                  secureTextEntry={!showPassword}
+                  editable={!loading}
+                  error={errors.password}
+                  leadingIcon={<Ionicons name="lock-closed-outline" size={26} color={scheme.onSurfaceVariant} />}
+                  trailing={<EyeToggle shown={showPassword} onToggle={() => setShowPassword(!showPassword)} />}
+                  style={styles.fieldGap}
+                />
 
                 {isLogin && (
-                  <TouchableOpacity
-                    onPress={openForgotPassword}
-                    style={styles.forgotPasswordLink}
-                    activeOpacity={0.7}
-                    disabled={loading}
-                  >
-                    <Text style={styles.forgotPasswordText}>¿Olvidaste tu contraseña?</Text>
-                  </TouchableOpacity>
+                  <View style={styles.forgotRow}>
+                    <Button
+                      title="¿Olvidaste tu contraseña?"
+                      variant="text"
+                      fullWidth={false}
+                      onPress={openForgotPassword}
+                    />
+                  </View>
                 )}
 
                 {!isLogin && (
-                  <>
-                    <Text style={styles.inputLabel}>Confirmar contraseña</Text>
-                    <View style={[styles.inputContainer, errors.confirmPassword && styles.inputContainerError]}>
-                      <Ionicons name="lock-closed-outline" size={26} color={COLORS.textSecondary} style={styles.inputIcon} />
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Repite tu contraseña"
-                        placeholderTextColor={COLORS.textLight}
-                        value={confirmPassword}
-                        onChangeText={(text) => {
-                          setConfirmPassword(text);
-                          clearFieldError('confirmPassword');
-                        }}
-                        secureTextEntry={!showConfirmPassword}
-                        editable={!loading}
-                      />
-                      <TouchableOpacity
-                        onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                        style={styles.eyeIcon}
-                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                      >
-                        <Ionicons
-                          name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                          size={26}
-                          color={COLORS.textSecondary}
-                        />
-                      </TouchableOpacity>
-                    </View>
-                    {errors.confirmPassword && <Text style={styles.errorText}>{errors.confirmPassword}</Text>}
-                  </>
+                  <TextField
+                    label="Repite la contraseña"
+                    placeholder="La misma de arriba"
+                    value={confirmPassword}
+                    onChangeText={(text) => {
+                      setConfirmPassword(text);
+                      clearFieldError('confirmPassword');
+                    }}
+                    secureTextEntry={!showConfirmPassword}
+                    editable={!loading}
+                    error={errors.confirmPassword}
+                    leadingIcon={<Ionicons name="lock-closed-outline" size={26} color={scheme.onSurfaceVariant} />}
+                    trailing={
+                      <EyeToggle shown={showConfirmPassword} onToggle={() => setShowConfirmPassword(!showConfirmPassword)} />
+                    }
+                    style={styles.fieldGap}
+                  />
                 )}
 
                 <Button
-                  title={isLogin ? 'Entrar' : 'Registrarme'}
+                  title={isLogin ? 'Entrar' : 'Crear mi cuenta'}
+                  icon={isLogin ? 'log-in-outline' : 'person-add-outline'}
+                  emphasis
                   onPress={handleSubmit}
                   loading={loading}
-                  style={styles.submitButton}
+                  style={isLogin ? styles.submitTight : styles.submit}
                 />
-
-                <TouchableOpacity
-                  onPress={switchMode}
-                  style={styles.switchButton}
-                  activeOpacity={0.7}
-                  disabled={loading}
-                >
-                  <Text style={styles.switchText}>
-                    {isLogin
-                      ? '¿No tienes cuenta? Regístrate aquí'
-                      : '¿Ya tienes cuenta? Inicia sesión'}
-                  </Text>
-                </TouchableOpacity>
               </>
             )}
-          </Animated.View>
+          </Surface>
+
+          {authView === 'form' && (
+            <View style={styles.switchBlock}>
+              <Text variant="bodySmall" tone="variant" center>
+                {isLogin ? '¿Todavía no tienes cuenta?' : '¿Ya tienes cuenta?'}
+              </Text>
+              <Button
+                title={isLogin ? 'Crear una cuenta' : 'Iniciar sesión'}
+                variant="outlined"
+                onPress={switchMode}
+                disabled={loading}
+                style={styles.switchButton}
+              />
+            </View>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: SPACING.lg,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: SPACING.xl,
-  },
-  iconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: BORDER_RADIUS.full,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-    ...SHADOWS.floating,
-  },
-  iconEmoji: {
-    fontSize: 56,
-  },
-  title: {
-    fontSize: FONTS.sizeTitle + 4,
-    fontFamily: FONTS.family.extraBold,
-    color: COLORS.primary,
-    marginBottom: SPACING.xs,
-  },
-  subtitle: {
-    fontSize: FONTS.sizeMedium,
-    fontFamily: FONTS.family.medium,
-    color: COLORS.textSecondary,
-  },
-  form: {
-    backgroundColor: COLORS.card,
-    borderRadius: BORDER_RADIUS.lg,
-    padding: SPACING.lg,
-    ...SHADOWS.card,
-  },
-  formTitle: {
-    fontSize: FONTS.sizeXLarge,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.text,
-    textAlign: 'center',
-    marginBottom: SPACING.lg,
-  },
-  formMessage: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    borderRadius: BORDER_RADIUS.md,
-    padding: SPACING.md,
-    marginBottom: SPACING.lg,
-  },
-  formMessageError: {
-    backgroundColor: COLORS.dangerLight,
-  },
-  formMessageSuccess: {
-    backgroundColor: COLORS.successLight,
-  },
-  formMessageIcon: {
-    marginRight: SPACING.sm,
-    marginTop: 2,
-  },
-  formMessageText: {
-    flex: 1,
-    fontSize: FONTS.sizeMedium,
-    fontFamily: FONTS.family.semiBold,
-  },
-  inputLabel: {
-    fontSize: FONTS.sizeMedium,
-    fontFamily: FONTS.family.bold,
-    color: COLORS.text,
-    marginBottom: SPACING.sm,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
-    borderRadius: BORDER_RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    minHeight: TOUCH_TARGET.minHeight,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  inputContainerError: {
-    borderColor: COLORS.danger,
-  },
-  inputIcon: {
-    marginRight: SPACING.sm,
-  },
-  input: {
-    flex: 1,
-    fontSize: FONTS.sizeMedium,
-    fontFamily: FONTS.family.regular,
-    color: COLORS.text,
-    paddingVertical: SPACING.md,
-  },
-  eyeIcon: {
-    padding: SPACING.sm,
-  },
-  errorText: {
-    fontSize: FONTS.sizeSmall,
-    fontFamily: FONTS.family.semiBold,
-    color: COLORS.danger,
-    marginTop: SPACING.xs,
-    marginBottom: SPACING.sm,
-  },
-  submitButton: {
-    marginTop: SPACING.sm,
-  },
-  switchButton: {
-    marginTop: SPACING.lg,
-    alignItems: 'center',
-    minHeight: TOUCH_TARGET.minHeight,
-    justifyContent: 'center',
-  },
-  switchText: {
-    fontSize: FONTS.sizeMedium,
-    fontFamily: FONTS.family.semiBold,
-    color: COLORS.secondary,
-    textDecorationLine: 'underline',
-  },
-  switchButtonSecondary: {
-    marginTop: SPACING.sm,
-    alignItems: 'center',
-    minHeight: TOUCH_TARGET.minHeight,
-    justifyContent: 'center',
-  },
-  switchTextSecondary: {
-    fontSize: FONTS.sizeSmall,
-    fontFamily: FONTS.family.medium,
-    color: COLORS.textSecondary,
-  },
-  helperText: {
-    fontSize: FONTS.sizeMedium,
-    fontFamily: FONTS.family.regular,
-    color: COLORS.textSecondary,
-    lineHeight: 28,
-    marginBottom: SPACING.lg,
-  },
-  forgotPasswordLink: {
-    alignItems: 'flex-end',
-    minHeight: TOUCH_TARGET.minHeight - 20,
-    justifyContent: 'center',
-    marginBottom: SPACING.sm,
-  },
-  forgotPasswordText: {
-    fontSize: FONTS.sizeSmall,
-    fontFamily: FONTS.family.semiBold,
-    color: COLORS.secondary,
-    textDecorationLine: 'underline',
-  },
-});
+const makeStyles = (t: ColorScheme) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: t.background,
+    },
+    flex: {
+      flex: 1,
+    },
+    scroll: {
+      flexGrow: 1,
+      justifyContent: 'center',
+      paddingHorizontal: SCREEN_MARGIN,
+    },
+    // ─── Marca ───
+    brand: {
+      alignItems: 'center',
+      marginBottom: SPACING.xxl,
+    },
+    mark: {
+      width: 96,
+      height: 96,
+      borderRadius: SHAPE.extraLarge,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: SPACING.lg,
+    },
+    brandName: {
+      marginBottom: SPACING.xs,
+    },
+    // ─── Formulario ───
+    formTitle: {
+      marginBottom: SPACING.xl,
+    },
+    helper: {
+      marginBottom: SPACING.xl,
+    },
+    notice: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: SPACING.md,
+      borderRadius: SHAPE.medium,
+      padding: SPACING.lg,
+      marginBottom: SPACING.xl,
+    },
+    noticeText: {
+      flex: 1,
+    },
+    fieldGap: {
+      marginTop: SPACING.xl,
+    },
+    fieldGapFirst: {
+      marginBottom: 0,
+    },
+    eye: {
+      width: 48,
+      height: 48,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginLeft: SPACING.sm,
+    },
+    forgotRow: {
+      alignItems: 'flex-end',
+      marginTop: SPACING.sm,
+    },
+    submit: {
+      marginTop: SPACING.xxl,
+    },
+    submitTight: {
+      marginTop: SPACING.md,
+    },
+    // ─── Cambiar de modo ───
+    switchBlock: {
+      alignItems: 'center',
+      marginTop: SPACING.xxl,
+      gap: SPACING.md,
+    },
+    switchButton: {
+      minHeight: TOUCH.min,
+    },
+  });
