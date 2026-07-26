@@ -13,6 +13,7 @@ import { useCaregiver } from '@/context/CaregiverContext';
 import { useTheme, useThemedStyles } from '@/context/ThemeContext';
 import { isConfirmed, markConfirmed, removeFromQueue } from '@/lib/alarmQueue';
 import { reconcileDoseRecords, saveDoseTakenWithRetry } from '@/lib/doseSync';
+
 import {
     cancelAllMedicationNotifications,
     cancelPersistentAlarm,
@@ -544,12 +545,11 @@ export default function HomeScreen() {
       <Text variant="bodyLarge" tone="variant" center style={styles.emptyText}>
         Agrega el primero y PastilleroApp se encargará de que suene a su hora, aunque la app esté cerrada.
       </Text>
-      <Button
-        title="Agregar mi primer medicamento"
-        icon="add"
-        emphasis
-        onPress={() => router.push('/add')}
-      />
+        <Fab 
+      label="Nuevo" 
+      icon="add" 
+      onPress={() => console.log('Acción ejecutada')} 
+    />
     </View>
   );
 
