@@ -1,5 +1,6 @@
 import { AdBanner } from '@/components/AdBanner';
 import { useFeedback } from '@/components/Feedback';
+import MedicationPhoto from '@/components/MedicationPhoto';
 import PatientBanner from '@/components/PatientBanner';
 import TreatmentEndedCard from '@/components/TreatmentEndedCard';
 import Button from '@/components/ui/Button';
@@ -25,17 +26,13 @@ import { supabase } from '@/lib/supabase';
 import {
     ColorScheme,
     MOTION,
-    NAV_BAR_HEIGHT,
     SCREEN_MARGIN,
     SHAPE,
     SPACING,
-    STATE_LAYER,
     TOUCH,
-    withAlpha,
 } from '@/lib/theme';
 import { Medication } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
 import * as Notifications from 'expo-notifications';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -48,7 +45,6 @@ import {
     StyleSheet,
     View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
     Easing,
     FadeInDown,
@@ -82,12 +78,15 @@ import Animated, {
 // cuando de verdad hace falta leerlo.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Espacio que la lista reserva al final para que su último elemento pueda
+// desplazarse por encima del FAB y quedar libre.
+const RESERVED_FOR_FAB = TOUCH.primary + SPACING.xxl;
+
 export default function HomeScreen() {
   const { user } = useAuth();
   const { activePatientId, isViewingOther } = useCaregiver();
   const { scheme } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { snack } = useFeedback();
 
@@ -500,13 +499,15 @@ export default function HomeScreen() {
           style={({ pressed }) => [pressed && styles.cardPressed]}
         >
           <Surface level={1} style={styles.doseCard}>
-            {item.photo_url ? (
-              <Image source={{ uri: item.photo_url }} style={styles.medImage} contentFit="cover" />
-            ) : (
-              <View style={styles.medImagePlaceholder}>
-                <Ionicons name="medical" size={34} color={scheme.tertiary} />
-              </View>
-            )}
+            <MedicationPhoto
+              source={item.photo_url}
+              style={styles.medImage}
+              fallback={
+                <View style={styles.medImagePlaceholder}>
+                  <Ionicons name="medical" size={34} color={scheme.tertiary} />
+                </View>
+              }
+            />
 
             <View style={styles.medInfo}>
               <Text variant="titleMedium" numberOfLines={2}>
@@ -545,11 +546,12 @@ export default function HomeScreen() {
       <Text variant="bodyLarge" tone="variant" center style={styles.emptyText}>
         Agrega el primero y PastilleroApp se encargará de que suene a su hora, aunque la app esté cerrada.
       </Text>
-        <Fab 
-      label="Nuevo" 
-      icon="add" 
-      onPress={() => console.log('Acción ejecutada')} 
-    />
+      <Button
+        title="Agregar mi primer medicamento"
+        icon="add"
+        emphasis
+        onPress={() => router.push('/add')}
+      />
     </View>
   );
 
@@ -730,12 +732,17 @@ export default function HomeScreen() {
         ListFooterComponent={renderFooter}
         ListEmptyComponent={!loading ? renderEmpty : null}
         onScroll={onScroll}
-        scrollEventThrottle={32}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           medications.length === 0 ? styles.emptyList : styles.list,
-          // El FAB flota sobre el final de la lista, así que el último renglón
-          // necesita poder desplazarse por encima de él para quedar libre.
-          { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOUCH.primary + SPACING.xl },
+          // Relleno CONSTANTE, para que la decisión de flotar no dependa de él.
+          // OJO con el inset inferior y el alto de la barra de navegación: NO
+          // van aquí. La pantalla de una pestaña ya termina arriba de la barra
+          // (react-navigation la deja fuera del área de contenido) y la barra ya
+          // absorbe el inset por su cuenta. Sumarlos otra vez metía ~104dp de
+          // espacio muerto al final de la lista y, peor, subía el FAB esa misma
+          // distancia hasta plantarlo justo encima del último elemento.
+          { paddingBottom: RESERVED_FOR_FAB },
         ]}
         refreshControl={
           <RefreshControl
@@ -755,7 +762,7 @@ export default function HomeScreen() {
           label="Agregar medicamento"
           extended={fabExtended}
           onPress={() => router.push('/add')}
-          style={[styles.fab, { bottom: insets.bottom + NAV_BAR_HEIGHT + SPACING.lg }]}
+          style={styles.fabFloating}
         />
       )}
     </View>
@@ -881,8 +888,14 @@ const makeStyles = (t: ColorScheme) =>
       marginBottom: SPACING.xxl,
     },
     // ─── FAB ───
-    fab: {
+    // Pegado a la esquina inferior derecha del ÁREA DE LA PESTAÑA. Esa área ya
+    // excluye la barra de navegación, así que 16dp aquí son 16dp reales por
+    // encima de ella. Sumar `NAV_BAR_HEIGHT` o el inset inferior —como estaba
+    // antes— lo levantaba ~104dp y lo dejaba plantado sobre el último elemento
+    // de la lista en vez de en su esquina.
+    fabFloating: {
       position: 'absolute',
       right: SCREEN_MARGIN,
+      bottom: SPACING.lg,
     },
   });

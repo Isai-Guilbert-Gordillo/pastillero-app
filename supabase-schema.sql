@@ -74,26 +74,17 @@ CREATE POLICY "Users can delete own dose_records"
   USING (auth.uid() = user_id);
 
 -- 5. Storage bucket para fotos de medicamentos
--- Ejecutar esto en el SQL Editor o crear manualmente desde el dashboard:
+--
+-- PRIVADO (public = false). La foto de una caja de medicamento es un dato de
+-- salud: con el bucket público, cualquiera con la URL —sin cuenta, sin sesión—
+-- podía verla. Las fotos se sirven con URLs firmadas de corta duración; ver
+-- lib/photos.ts y la migración "Fotos privadas" al final de este archivo.
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('medication-photos', 'medication-photos', true)
+VALUES ('medication-photos', 'medication-photos', false)
 ON CONFLICT (id) DO NOTHING;
 
--- Política de storage: usuarios autenticados pueden subir fotos
-CREATE POLICY "Authenticated users can upload medication photos"
-  ON storage.objects FOR INSERT
-  TO authenticated
-  WITH CHECK (bucket_id = 'medication-photos');
-
-CREATE POLICY "Anyone can view medication photos"
-  ON storage.objects FOR SELECT
-  TO public
-  USING (bucket_id = 'medication-photos');
-
-CREATE POLICY "Users can delete own medication photos"
-  ON storage.objects FOR DELETE
-  TO authenticated
-  USING (bucket_id = 'medication-photos');
+-- Las políticas del bucket viven en la migración "Fotos privadas" al final de
+-- este archivo: dependen de is_caregiver_of(), que se define más abajo.
 
 -- ============================================
 -- MIGRACIÓN: Agregar columna days_of_week
@@ -429,4 +420,402 @@ SELECT cron.schedule(
   'close-expired-treatments-daily',
   '0 3 * * *',
   $$SELECT close_expired_treatments();$$
+);
+
+-- ============================================
+-- MIGRACIÓN: Fotos privadas (bucket cerrado + URLs firmadas)
+--
+-- ANTES: el bucket 'medication-photos' era público y sus políticas eran
+--   · SELECT  TO public         → cualquiera en internet con la URL veía la
+--                                 foto del medicamento de cualquier paciente.
+--   · INSERT  TO authenticated  → sin filtro de carpeta: cualquier usuario
+--                                 registrado podía escribir en la carpeta de
+--                                 otro.
+--   · DELETE  TO authenticated  → sin filtro de dueño: cualquier usuario
+--                                 registrado podía BORRAR las fotos de otro.
+--
+-- La foto de una caja de pastillas es un dato de salud. Además de la fuga en
+-- sí, un bucket público contradice lo que hay que declarar en el formulario
+-- de "Seguridad de los datos" de Google Play.
+--
+-- AHORA: bucket privado, y el acceso se decide por la PRIMERA CARPETA de la
+-- ruta, que es el user_id del paciente dueño ('<uuid>/<timestamp>.jpg' — así
+-- es como ya subían las fotos app/add.tsx y app/details/[id].tsx). Pasan solo
+-- el dueño y sus cuidadores aceptados, la misma regla que ya rige
+-- medications/dose_records. La app pide URLs firmadas de 1 hora
+-- (lib/photos.ts); Supabase solo las emite si esta política deja pasar.
+-- ============================================
+
+UPDATE storage.buckets SET public = false WHERE id = 'medication-photos';
+
+-- Devuelve true si auth.uid() puede tocar la carpeta p_folder del bucket.
+-- Valida el formato UUID antes de castear: un nombre de archivo suelto en la
+-- raíz del bucket (sin carpeta) haría fallar el cast y con él toda la
+-- política, y una política que revienta no protege nada.
+CREATE OR REPLACE FUNCTION can_access_photo_folder(p_folder TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+DECLARE
+  v_owner UUID;
+BEGIN
+  IF p_folder IS NULL OR p_folder !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+    RETURN false;
+  END IF;
+
+  v_owner := p_folder::uuid;
+  RETURN v_owner = auth.uid() OR is_caregiver_of(v_owner);
+END;
+$$;
+
+-- Las tres políticas viejas y permisivas, fuera.
+DROP POLICY IF EXISTS "Authenticated users can upload medication photos" ON storage.objects;
+DROP POLICY IF EXISTS "Anyone can view medication photos" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete own medication photos" ON storage.objects;
+
+DROP POLICY IF EXISTS "Photo owners and caregivers can view" ON storage.objects;
+CREATE POLICY "Photo owners and caregivers can view"
+  ON storage.objects FOR SELECT
+  TO authenticated
+  USING (
+    bucket_id = 'medication-photos'
+    AND can_access_photo_folder((storage.foldername(name))[1])
+  );
+
+DROP POLICY IF EXISTS "Photo owners and caregivers can upload" ON storage.objects;
+CREATE POLICY "Photo owners and caregivers can upload"
+  ON storage.objects FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    bucket_id = 'medication-photos'
+    AND can_access_photo_folder((storage.foldername(name))[1])
+  );
+
+DROP POLICY IF EXISTS "Photo owners and caregivers can update" ON storage.objects;
+CREATE POLICY "Photo owners and caregivers can update"
+  ON storage.objects FOR UPDATE
+  TO authenticated
+  USING (
+    bucket_id = 'medication-photos'
+    AND can_access_photo_folder((storage.foldername(name))[1])
+  )
+  WITH CHECK (
+    bucket_id = 'medication-photos'
+    AND can_access_photo_folder((storage.foldername(name))[1])
+  );
+
+DROP POLICY IF EXISTS "Photo owners and caregivers can delete" ON storage.objects;
+CREATE POLICY "Photo owners and caregivers can delete"
+  ON storage.objects FOR DELETE
+  TO authenticated
+  USING (
+    bucket_id = 'medication-photos'
+    AND can_access_photo_folder((storage.foldername(name))[1])
+  );
+
+-- Normalizar las filas viejas: medications.photo_url guardaba la URL pública
+-- completa, que con el bucket cerrado ya no carga. A partir de ahora se guarda
+-- solo la RUTA dentro del bucket ('<uuid>/<timestamp>.jpg') y la app la firma
+-- al momento de mostrarla. lib/photos.ts igual sabe leer las URLs viejas por
+-- si alguna se escapa, pero conviene dejar la columna consistente.
+UPDATE medications
+  SET photo_url = split_part(photo_url, '/storage/v1/object/public/medication-photos/', 2)
+  WHERE photo_url LIKE '%/storage/v1/object/public/medication-photos/%';
+
+-- ============================================
+-- MIGRACIÓN: Eliminar mi cuenta
+--
+-- Google Play exige, para toda app que permite crear una cuenta, que se pueda
+-- BORRAR esa cuenta y sus datos desde dentro de la app. Sin esto la ficha se
+-- rechaza, y es de lo primero que revisan.
+--
+-- Tiene que ser SECURITY DEFINER: el cliente con la anon key nunca puede
+-- tocar auth.users por su cuenta. La función no recibe ningún id — siempre
+-- borra al que llama, leído de auth.uid(), para que nadie pueda pedir el
+-- borrado de la cuenta de otro pasando un uuid ajeno.
+--
+-- QUÉ BORRA (todo lo del propio usuario, nada de nadie más):
+--  · sus fotos en el bucket (la carpeta '<su uuid>/'),
+--  · sus dose_records y medications,
+--  · sus vínculos de cuidado, en las dos direcciones: los cuidadores que
+--    invitó Y los pacientes que cuida. Si un cuidador borra SU cuenta, los
+--    medicamentos del paciente NO se tocan; solo pierde el acceso.
+-- ============================================
+
+CREATE OR REPLACE FUNCTION delete_my_account()
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, storage
+AS $$
+DECLARE
+  v_uid UUID := auth.uid();
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated';
+  END IF;
+
+  DELETE FROM storage.objects
+    WHERE bucket_id = 'medication-photos'
+      AND (storage.foldername(name))[1] = v_uid::text;
+
+  DELETE FROM dose_records WHERE user_id = v_uid;
+  DELETE FROM medications WHERE user_id = v_uid;
+  DELETE FROM caregiver_links
+    WHERE patient_user_id = v_uid OR caregiver_user_id = v_uid;
+
+  -- Al final: auth.users arrastra en cascada sesiones e identidades, así que
+  -- la sesión del teléfono queda muerta en cuanto termine esta transacción.
+  DELETE FROM auth.users WHERE id = v_uid;
+END;
+$$;
+
+-- Solo una sesión iniciada puede llamarla; anon no.
+REVOKE ALL ON FUNCTION delete_my_account() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION delete_my_account() TO authenticated;
+
+-- ============================================
+-- MIGRACIÓN: Avisos push al cuidador (dosis sin confirmar)
+--
+-- Hasta ahora TODO era local al teléfono del paciente: si nadie abría la app,
+-- nadie se enteraba de nada. Un cuidador a distancia no tenía forma de saber
+-- que su familiar no se tomó la medicina hasta entrar a mirar.
+--
+-- Esto lo cambia SOLO para el cuidador. Las alarmas del paciente siguen siendo
+-- 100% locales a propósito: no deben depender de internet ni de que este
+-- servidor esté vivo. Lo que se agrega es un vigilante que corre dentro de
+-- Postgres, ve las dosis que quedaron sin confirmar pasado un margen, y manda
+-- un push al teléfono de quien lo cuida.
+--
+-- REQUIERE la extensión pg_net (Database → Extensions en el dashboard). Si el
+-- CREATE EXTENSION de abajo falla por permisos, actívala ahí y vuelve a correr
+-- el resto.
+-- ============================================
+
+CREATE EXTENSION IF NOT EXISTS pg_net;
+
+-- 1. Tokens de dispositivo ────────────────────────────────────────────────────
+-- Uno por teléfono, no por usuario: alguien puede tener teléfono y tablet, y
+-- un mismo teléfono puede cambiar de dueño. Por eso el token es UNIQUE y no
+-- (user_id, token).
+CREATE TABLE IF NOT EXISTS device_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  expo_push_token TEXT NOT NULL UNIQUE,
+  platform TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON device_tokens(user_id);
+
+ALTER TABLE device_tokens ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users manage their own device tokens" ON device_tokens;
+CREATE POLICY "Users manage their own device tokens"
+  ON device_tokens FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- Registrar el token del teléfono actual.
+--
+-- Es SECURITY DEFINER por un caso concreto: si el teléfono cambió de manos y
+-- el dueño anterior no cerró sesión, la fila de ese token pertenece a OTRO
+-- usuario y la política de arriba impediría reclamarla — el nuevo dueño se
+-- quedaría sin avisos para siempre. Aquí se borra la fila vieja y se crea la
+-- nueva a nombre de quien llama, que siempre es auth.uid().
+CREATE OR REPLACE FUNCTION register_device_token(p_token TEXT, p_platform TEXT DEFAULT NULL)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $fn$
+DECLARE
+  v_uid UUID := auth.uid();
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated';
+  END IF;
+
+  IF p_token IS NULL OR length(trim(p_token)) = 0 THEN
+    RAISE EXCEPTION 'empty_token';
+  END IF;
+
+  DELETE FROM device_tokens WHERE expo_push_token = p_token;
+
+  INSERT INTO device_tokens (user_id, expo_push_token, platform)
+  VALUES (v_uid, p_token, p_platform);
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION register_device_token(TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION register_device_token(TEXT, TEXT) TO authenticated;
+
+-- 2. Marca de "ya revisada" en cada dosis ─────────────────────────────────────
+-- OJO con el nombre: se marca aunque no hubiera a quién avisar (paciente sin
+-- cuidadores, o cuidador sin token). Significa "el vigilante ya la evaluó",
+-- no "se envió un aviso". Sin esto, cada corrida volvería a notificar la
+-- misma dosis cada 5 minutos.
+ALTER TABLE dose_records
+  ADD COLUMN IF NOT EXISTS caregiver_alert_processed_at TIMESTAMPTZ;
+
+COMMENT ON COLUMN dose_records.caregiver_alert_processed_at IS 'Cuándo el vigilante de dosis sin confirmar evaluó esta fila. No implica que se haya enviado un aviso.';
+
+CREATE INDEX IF NOT EXISTS idx_dose_records_pending_alert
+  ON dose_records(scheduled_at)
+  WHERE taken IS NULL AND caregiver_alert_processed_at IS NULL;
+
+-- 3. El vigilante ─────────────────────────────────────────────────────────────
+--
+-- El mensaje NO lleva la hora de la dosis a propósito: scheduled_at es
+-- timestamptz y aquí no se conoce la zona horaria del paciente, así que
+-- imprimir "las 14:00" daría una hora equivocada para casi todo el mundo. En
+-- una app de medicamentos, una hora incorrecta es peor que ninguna hora.
+--
+-- El payload TAMPOCO lleva medicationId. El teléfono del cuidador reconoce ese
+-- campo como "alarma mía" y abriría la pantalla de alarma a pantalla completa
+-- por la medicina de otra persona (ver los observadores en app/_layout.tsx).
+CREATE OR REPLACE FUNCTION notify_caregivers_of_missed_doses()
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, net, extensions, auth
+AS $fn$
+DECLARE
+  -- Margen antes de molestar a nadie: una persona mayor puede tardar en
+  -- responder la alarma sin que pase nada malo.
+  grace_minutes CONSTANT INTEGER := 30;
+  -- Más allá de esto ya no se avisa: enterarse a las 3 de la mañana de una
+  -- dosis de ayer no ayuda a nadie.
+  lookback_hours CONSTANT INTEGER := 6;
+  batch_size CONSTANT INTEGER := 100;
+  v_messages JSONB;
+  v_batch JSONB;
+  v_total INTEGER := 0;
+  i INTEGER;
+BEGIN
+  WITH pendientes AS (
+    SELECT dr.id, m.name AS med_name, m.user_id AS patient_id
+    FROM dose_records dr
+    JOIN medications m ON m.id = dr.medication_id
+    WHERE dr.taken IS NULL
+      AND dr.caregiver_alert_processed_at IS NULL
+      AND m.active
+      AND dr.scheduled_at < now() - make_interval(mins => grace_minutes)
+      AND dr.scheduled_at > now() - make_interval(hours => lookback_hours)
+  ),
+  marcadas AS (
+    UPDATE dose_records
+      SET caregiver_alert_processed_at = now()
+      WHERE id IN (SELECT id FROM pendientes)
+  ),
+  destinatarios AS (
+    SELECT DISTINCT
+      dt.expo_push_token,
+      p.med_name,
+      COALESCE(NULLIF(u.raw_user_meta_data->>'full_name', ''), cl.patient_email) AS paciente
+    FROM pendientes p
+    JOIN caregiver_links cl
+      ON cl.patient_user_id = p.patient_id
+     AND cl.status = 'accepted'
+     AND cl.caregiver_user_id IS NOT NULL
+    JOIN device_tokens dt ON dt.user_id = cl.caregiver_user_id
+    LEFT JOIN auth.users u ON u.id = p.patient_id
+  )
+  SELECT jsonb_agg(
+    jsonb_build_object(
+      'to', expo_push_token,
+      'title', 'Dosis sin confirmar',
+      'body', paciente || ' no ha confirmado su dosis de ' || med_name || '.',
+      'sound', 'default',
+      'priority', 'high',
+      'channelId', 'avisos_cuidador',
+      'data', jsonb_build_object('type', 'CAREGIVER_ALERT')
+    )
+  )
+  INTO v_messages
+  FROM destinatarios;
+
+  IF v_messages IS NULL THEN
+    RETURN 0;
+  END IF;
+
+  v_total := jsonb_array_length(v_messages);
+
+  -- Expo acepta como máximo 100 mensajes por petición.
+  i := 0;
+  WHILE i < v_total LOOP
+    SELECT jsonb_agg(elem)
+      INTO v_batch
+      FROM (
+        SELECT elem
+        FROM jsonb_array_elements(v_messages) WITH ORDINALITY AS t(elem, ord)
+        WHERE ord > i AND ord <= i + batch_size
+      ) s;
+
+    PERFORM net.http_post(
+      url := 'https://exp.host/--/api/v2/push/send',
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'Accept', 'application/json'
+      ),
+      body := v_batch
+    );
+
+    i := i + batch_size;
+  END LOOP;
+
+  RETURN v_total;
+END;
+$fn$;
+
+-- Cada 5 minutos. Reprogramable: quita el job si ya existía.
+DO $do$
+BEGIN
+  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'notify-caregivers-missed-doses') THEN
+    PERFORM cron.unschedule('notify-caregivers-missed-doses');
+  END IF;
+END $do$;
+
+SELECT cron.schedule(
+  'notify-caregivers-missed-doses',
+  '*/5 * * * *',
+  $job$SELECT notify_caregivers_of_missed_doses();$job$
+);
+
+-- 4. Limpieza de tokens muertos ───────────────────────────────────────────────
+-- Un token de un teléfono que se formateó o desinstaló la app queda vivo en la
+-- tabla para siempre y Expo devuelve DeviceNotRegistered en cada envío. Leer
+-- esa respuesta desde aquí sería otro trabajo entero, así que se usa lo que sí
+-- se sabe: la app reafirma su token en cada arranque con sesión (lib/push.ts),
+-- o sea que un token sin tocar en 90 días es de un teléfono que ya no entra.
+CREATE OR REPLACE FUNCTION prune_stale_device_tokens()
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $fn$
+DECLARE
+  removed INTEGER;
+BEGIN
+  DELETE FROM device_tokens WHERE updated_at < now() - INTERVAL '90 days';
+  GET DIAGNOSTICS removed = ROW_COUNT;
+  RETURN removed;
+END;
+$fn$;
+
+DO $do$
+BEGIN
+  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'prune-stale-device-tokens') THEN
+    PERFORM cron.unschedule('prune-stale-device-tokens');
+  END IF;
+END $do$;
+
+SELECT cron.schedule(
+  'prune-stale-device-tokens',
+  '30 3 * * 0',
+  $job$SELECT prune_stale_device_tokens();$job$
 );

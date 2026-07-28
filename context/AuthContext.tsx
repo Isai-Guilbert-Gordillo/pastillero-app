@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
+import { LEGAL_VERSION } from '@/lib/links';
+import { clearPhotoCache } from '@/lib/photos';
+import { unregisterDeviceToken } from '@/lib/push';
 import { supabase } from '@/lib/supabase';
 
 interface AuthContextType {
@@ -95,10 +98,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signUp = async (email: string, password: string, fullName: string) => {
+    // El consentimiento se guarda CON la versión de los documentos y la fecha.
+    // La ley mexicana pide consentimiento expreso para datos sensibles (los de
+    // salud lo son) y "aceptó los términos" sin decir cuáles ni cuándo no
+    // demuestra nada en cuanto el texto cambie. Va en user_metadata para que
+    // quede atado a la cuenta desde el instante de su creación.
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName } },
+      options: {
+        data: {
+          full_name: fullName,
+          legal_version: LEGAL_VERSION,
+          legal_accepted_at: new Date().toISOString(),
+          health_data_consent: true,
+        },
+      },
     });
     // Si el proyecto de Supabase tiene desactivada la confirmación por correo,
     // signUp ya deja una sesión activa (data.session) — no hay nada que confirmar.
@@ -109,6 +124,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    // Antes del signOut: después ya no hay permiso de RLS para borrar la fila
+    // y este teléfono seguiría recibiendo avisos de una cuenta ajena.
+    await unregisterDeviceToken();
+    clearPhotoCache();
     await supabase.auth.signOut();
   };
 

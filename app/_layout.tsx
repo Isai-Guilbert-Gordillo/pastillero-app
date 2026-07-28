@@ -4,6 +4,7 @@ import { CaregiverProvider } from '@/context/CaregiverContext';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { enqueueAlarm } from '@/lib/alarmQueue';
 import { registerForPushNotifications, setupNotificationCategories, snoozeAlarm } from '@/lib/notifications';
+import { registerDeviceToken, setupCaregiverChannel } from '@/lib/push';
 import {
     Poppins_400Regular,
     Poppins_500Medium,
@@ -41,12 +42,22 @@ function RootLayoutNav() {
   useEffect(() => {
     registerForPushNotifications();
     setupNotificationCategories();
+    setupCaregiverChannel();
     // Dar tiempo a que el Stack se monte antes de marcar ready
     const timer = setTimeout(() => {
       navigationReady.current = true;
     }, 500);
     return () => clearTimeout(timer);
   }, []);
+
+  // ─── Token push del dispositivo ───
+  // Solo con sesión iniciada, y en cada arranque: el token de Expo puede
+  // rotar (reinstalación, restauración del teléfono), así que reafirmarlo es
+  // más barato que descubrir que dejó de servir cuando hacía falta el aviso.
+  useEffect(() => {
+    if (!user) return;
+    registerDeviceToken();
+  }, [user]);
 
   // ─── Detectar cuando la app vuelve al primer plano ───
   // Encola TODAS las notificaciones ALARM pendientes (antes solo procesaba
@@ -144,7 +155,11 @@ function RootLayoutNav() {
       const data = response.notification.request.content.data;
       const actionId = response.actionIdentifier;
 
-      if (!data?.medicationId) return;
+      // Solo las alarmas locales del propio paciente abren la pantalla de
+      // alarma. Un aviso push de cuidador ("no confirmó su dosis") llega al
+      // teléfono de OTRA persona: hacerle sonar una alarma a pantalla completa
+      // por la medicina de un tercero sería, además de absurdo, peligroso.
+      if (!data?.medicationId || data?.type !== 'ALARM') return;
 
       // Si tocó "Recordar en 5 min" → cancelar recordatorios actuales y reprogramar
       if (actionId === 'SNOOZE') {
@@ -169,7 +184,8 @@ function RootLayoutNav() {
     Notifications.getLastNotificationResponseAsync().then((response) => {
       if (!response) return;
       const data = response.notification.request.content.data;
-      if (data?.medicationId) {
+      // Mismo filtro que el observador de arriba: solo alarmas propias.
+      if (data?.medicationId && data?.type === 'ALARM') {
         // Esperar a que la navegación esté lista
         const timer = setTimeout(() => {
           navigateToAlarm(data);
@@ -254,6 +270,13 @@ function RootLayoutNav() {
           options={{
             presentation: 'card',
             animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="delete-account"
+          options={{
+            presentation: 'card',
+            animation: 'slide_from_right',
           }}
         />
       </Stack>

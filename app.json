@@ -25,17 +25,18 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.VIBRATE",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.USE_FULL_SCREEN_INTENT",
         "android.permission.WAKE_LOCK",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.RECORD_AUDIO",
         "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
         "com.android.alarm.permission.SET_ALARM"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW"
       ]
     },
     "web": {
@@ -57,7 +58,8 @@
         "expo-image-picker",
         {
           "photosPermission": "Necesitamos acceso a tu galería para seleccionar fotos de tus medicamentos.",
-          "cameraPermission": "Necesitamos acceso a la cámara para tomar fotos de tus medicamentos."
+          "cameraPermission": "Necesitamos acceso a la cámara para tomar fotos de tus medicamentos.",
+          "microphonePermission": false
         }
       ],
       "@react-native-community/datetimepicker",
@@ -67,7 +69,8 @@
           "icon": "./assets/images/icon.png",
           "color": "#00695C"
         }
-      ]
+      ],
+      "./plugins/withLegacyStoragePermissions"
     ],
     "experiments": {
       "typedRoutes": true,

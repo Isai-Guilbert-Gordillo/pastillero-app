@@ -1,4 +1,5 @@
 import { useFeedback } from '@/components/Feedback';
+import MedicationPhoto from '@/components/MedicationPhoto';
 import PatientBanner from '@/components/PatientBanner';
 import Button from '@/components/ui/Button';
 import Chip from '@/components/ui/Chip';
@@ -11,11 +12,11 @@ import TopAppBar from '@/components/ui/TopAppBar';
 import { useCaregiver } from '@/context/CaregiverContext';
 import { useTheme, useThemedStyles } from '@/context/ThemeContext';
 import { cancelAllMedicationNotifications, scheduleMedicationNotifications, scheduleNativeAlarms } from '@/lib/notifications';
+import { deleteMedicationPhoto, uploadMedicationPhoto } from '@/lib/photos';
 import { supabase } from '@/lib/supabase';
 import { ColorScheme, SCREEN_MARGIN, SHAPE, SPACING, TOUCH, elevation } from '@/lib/theme';
 import { Medication } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
@@ -276,28 +277,6 @@ export default function MedicationDetailScreen() {
     ]);
   };
 
-  const uploadImage = async (uri: string): Promise<string | null> => {
-    try {
-      const fileName = `${medication!.user_id}/${Date.now()}.jpg`;
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const arrayBuffer = await new Response(blob).arrayBuffer();
-
-      const { error } = await supabase.storage
-        .from('medication-photos')
-        .upload(fileName, arrayBuffer, { contentType: 'image/jpeg', upsert: false });
-
-      if (error) return null;
-
-      const { data } = supabase.storage
-        .from('medication-photos')
-        .getPublicUrl(fileName);
-      return data.publicUrl;
-    } catch {
-      return null;
-    }
-  };
-
   // ─── Guardar cambios ───
   const handleSaveEdit = async () => {
     const found: EditErrors = {};
@@ -329,12 +308,20 @@ export default function MedicationDetailScreen() {
       Number(editFrequency) !== medication?.frequency_hours ||
       daysChanged;
 
+    // Subir imagen nueva solo si cambió y es una URI local. editImageUri
+    // arranca con lo que hay en la base (una ruta del bucket), así que la
+    // comparación distingue "no la tocó" de "eligió otra".
     let photoUrl = medication?.photo_url ?? null;
-    // Subir imagen nueva solo si cambió y es una URI local
     if (editImageUri && editImageUri !== medication?.photo_url) {
-      const uploaded = await uploadImage(editImageUri);
-      if (uploaded) photoUrl = uploaded;
+      const uploaded = await uploadMedicationPhoto(editImageUri, medication!.user_id);
+      if (uploaded) {
+        // La foto vieja ya no la referencia nadie: dejarla en el bucket sería
+        // guardar un dato de salud que el usuario creyó haber reemplazado.
+        await deleteMedicationPhoto(medication?.photo_url);
+        photoUrl = uploaded;
+      }
     } else if (!editImageUri) {
+      await deleteMedicationPhoto(medication?.photo_url);
       photoUrl = null;
     }
 
@@ -503,13 +490,15 @@ export default function MedicationDetailScreen() {
               style={({ pressed }) => pressed && styles.pressed}
             >
               <Surface level={1} style={styles.photoCard}>
-                {editImageUri ? (
-                  <Image source={{ uri: editImageUri }} style={styles.photoThumb} contentFit="cover" />
-                ) : (
-                  <View style={[styles.photoPlaceholder, { backgroundColor: scheme.tertiaryContainer }]}>
-                    <Ionicons name="camera-outline" size={38} color={scheme.onTertiaryContainer} />
-                  </View>
-                )}
+                <MedicationPhoto
+                  source={editImageUri}
+                  style={styles.photoThumb}
+                  fallback={
+                    <View style={[styles.photoPlaceholder, { backgroundColor: scheme.tertiaryContainer }]}>
+                      <Ionicons name="camera-outline" size={38} color={scheme.onTertiaryContainer} />
+                    </View>
+                  }
+                />
                 <View style={styles.flex}>
                   <Text variant="titleSmall">{editImageUri ? 'Foto lista' : 'Agregar foto'}</Text>
                   <Text variant="bodySmall" tone="variant">
@@ -740,13 +729,15 @@ export default function MedicationDetailScreen() {
       >
         {/* ─── Identidad del medicamento ─── */}
         <Surface level={1} padded style={styles.hero}>
-          {medication.photo_url ? (
-            <Image source={{ uri: medication.photo_url }} style={styles.heroImage} contentFit="cover" />
-          ) : (
-            <View style={[styles.heroPlaceholder, { backgroundColor: scheme.tertiaryContainer }]}>
-              <Ionicons name="medical" size={48} color={scheme.onTertiaryContainer} />
-            </View>
-          )}
+          <MedicationPhoto
+            source={medication.photo_url}
+            style={styles.heroImage}
+            fallback={
+              <View style={[styles.heroPlaceholder, { backgroundColor: scheme.tertiaryContainer }]}>
+                <Ionicons name="medical" size={48} color={scheme.onTertiaryContainer} />
+              </View>
+            }
+          />
           <Text variant="headlineSmall" center style={styles.heroName}>
             {medication.name}
           </Text>

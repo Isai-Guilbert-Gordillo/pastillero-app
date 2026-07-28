@@ -1,0 +1,191 @@
+/* Hoja compartida por las tres páginas públicas de PastilleroApp.
+   Sin fuentes ni scripts externos: cargan en cualquier conexión y no hay
+   terceros mirando quién lee la política de privacidad. */
+
+:root {
+  --verde: #00695c;
+  --verde-claro: #e8f5e9;
+  --fondo: #ffffff;
+  --texto: #1a1c1b;
+  --texto-suave: #4a4f4d;
+  --borde: #d7e0dc;
+  --aviso: #fff8e1;
+  --aviso-borde: #e6c200;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --verde: #4db6ac;
+    --verde-claro: #12211f;
+    --fondo: #101413;
+    --texto: #e6eae8;
+    --texto-suave: #a9b3b0;
+    --borde: #2a3432;
+    --aviso: #241f0a;
+    --aviso-borde: #7a6a12;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0 1.25rem 4rem;
+  background: var(--fondo);
+  color: var(--texto);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* 18px de base: el público de la app son personas mayores, y quien lea esto
+     desde el teléfono no debería tener que hacer zoom. */
+  font-size: 18px;
+  line-height: 1.65;
+}
+
+main {
+  max-width: 44rem;
+  margin: 0 auto;
+}
+
+header {
+  border-bottom: 3px solid var(--verde);
+  padding: 2.5rem 0 1.25rem;
+  margin-bottom: 2rem;
+}
+
+header p {
+  color: var(--texto-suave);
+  margin: 0.25rem 0 0;
+  font-size: 0.95rem;
+}
+
+h1 {
+  font-size: 1.9rem;
+  line-height: 1.25;
+  margin: 0;
+  color: var(--verde);
+}
+
+h2 {
+  font-size: 1.35rem;
+  margin: 2.5rem 0 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--borde);
+}
+
+h3 {
+  font-size: 1.1rem;
+  margin: 1.75rem 0 0.5rem;
+}
+
+a {
+  color: var(--verde);
+}
+
+ul {
+  padding-left: 1.4rem;
+}
+
+li {
+  margin-bottom: 0.5rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.95rem;
+}
+
+/* Las tablas nunca deben empujar la página a lo ancho en un teléfono. */
+.tabla-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+th,
+td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+th {
+  background: var(--verde-claro);
+  font-weight: 600;
+}
+
+.destacado {
+  background: var(--verde-claro);
+  border-left: 5px solid var(--verde);
+  padding: 1rem 1.25rem;
+  border-radius: 0 8px 8px 0;
+  margin: 1.5rem 0;
+}
+
+.aviso {
+  background: var(--aviso);
+  border-left: 5px solid var(--aviso-borde);
+  padding: 1rem 1.25rem;
+  border-radius: 0 8px 8px 0;
+  margin: 1.5rem 0;
+}
+
+.destacado > :first-child,
+.aviso > :first-child {
+  margin-top: 0;
+}
+
+.destacado > :last-child,
+.aviso > :last-child {
+  margin-bottom: 0;
+}
+
+.pasos {
+  counter-reset: paso;
+  list-style: none;
+  padding-left: 0;
+}
+
+.pasos li {
+  counter-increment: paso;
+  position: relative;
+  padding: 0 0 1.25rem 3.25rem;
+  min-height: 2.25rem;
+}
+
+.pasos li::before {
+  content: counter(paso);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: var(--verde);
+  color: #ffffff;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.correo {
+  display: inline-block;
+  font-weight: 600;
+  font-size: 1.05rem;
+  word-break: break-all;
+}
+
+footer {
+  margin-top: 3.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--borde);
+  color: var(--texto-suave);
+  font-size: 0.9rem;
+}
+
+footer a {
+  margin-right: 1.25rem;
+}

@@ -10,10 +10,10 @@ import TopAppBar from '@/components/ui/TopAppBar';
 import { useAuth } from '@/context/AuthContext';
 import { useCaregiver } from '@/context/CaregiverContext';
 import { ThemePreference, useTheme, useThemedStyles } from '@/context/ThemeContext';
+import { LINKS } from '@/lib/links';
 import { cancelAllNotifications } from '@/lib/notifications';
 import {
     ColorScheme,
-    NAV_BAR_HEIGHT,
     SCREEN_MARGIN,
     SHAPE,
     SPACING,
@@ -23,6 +23,7 @@ import {
 } from '@/lib/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import React, { useState } from 'react';
 import {
     NativeScrollEvent,
@@ -34,7 +35,6 @@ import {
     StyleSheet,
     View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Perfil.
@@ -74,7 +74,6 @@ export default function ProfileScreen() {
   } = useCaregiver();
   const { scheme, preference, setPreference } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { alert, snack } = useFeedback();
 
@@ -166,10 +165,10 @@ export default function ProfileScreen() {
       <ScrollView
         onScroll={onScroll}
         scrollEventThrottle={32}
-        contentContainerStyle={[
-          styles.scroll,
-          { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + SPACING.xxl },
-        ]}
+        // Ni el inset inferior ni el alto de la barra de navegación: el área de
+        // una pestaña ya termina arriba de la barra, y la barra ya absorbe el
+        // inset. Sumarlos aquí dejaba ~104dp de espacio muerto al final.
+        contentContainerStyle={[styles.scroll, { paddingBottom: SPACING.xxl }]}
         showsVerticalScrollIndicator={false}
       >
         {/* ─── Identidad ─── */}
@@ -408,6 +407,36 @@ export default function ProfileScreen() {
             headline="PastilleroApp"
             supporting="Tu recordatorio de medicamentos · versión 1.0.0"
           />
+          <ListDivider />
+          <ListItem
+            leading={
+              <IconBadge
+                name="lock-closed"
+                color={scheme.secondary}
+                backgroundColor={scheme.secondaryContainer}
+                size={48}
+              />
+            }
+            headline="Política de privacidad"
+            supporting="Qué datos guardamos y con quién se comparten"
+            onPress={() => WebBrowser.openBrowserAsync(LINKS.privacidad).catch(() => {})}
+            navigates
+          />
+          <ListDivider />
+          <ListItem
+            leading={
+              <IconBadge
+                name="document-text"
+                color={scheme.onSurfaceVariant}
+                backgroundColor={scheme.surfaceContainer}
+                size={48}
+              />
+            }
+            headline="Términos de uso"
+            supporting="Qué hace la app, qué no hace y sus límites"
+            onPress={() => WebBrowser.openBrowserAsync(LINKS.terminos).catch(() => {})}
+            navigates
+          />
         </Surface>
 
         <Button
@@ -416,6 +445,16 @@ export default function ProfileScreen() {
           variant="destructive"
           onPress={handleSignOut}
           style={styles.signOut}
+        />
+
+        {/* Eliminar la cuenta va aparte y en texto, no como botón rojo: es la
+            única acción irreversible de la app y no debe competir visualmente
+            con "Cerrar sesión", que es lo que casi siempre se busca aquí. */}
+        <Button
+          title="Eliminar mi cuenta"
+          variant="text"
+          onPress={() => router.push('/delete-account' as any)}
+          style={styles.deleteAccount}
         />
       </ScrollView>
     </View>
@@ -507,5 +546,8 @@ const makeStyles = (t: ColorScheme) =>
     },
     signOut: {
       marginTop: SPACING.xxxl,
+    },
+    deleteAccount: {
+      marginTop: SPACING.sm,
     },
   });

@@ -1,4 +1,5 @@
 import { useFeedback } from '@/components/Feedback';
+import MedicationPhoto from '@/components/MedicationPhoto';
 import Text from '@/components/ui/Text';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -10,7 +11,6 @@ import { MOTION, SCREEN_MARGIN, SHAPE, SPACING, TOUCH } from '@/lib/theme';
 import { Medication } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
-import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
@@ -316,13 +316,15 @@ export default function AlarmScreen() {
 
         {/* ─── El medicamento, a escala de display ─── */}
         <View style={styles.medBlock}>
-          {medication?.photo_url ? (
-            <Image source={{ uri: medication.photo_url }} style={styles.photo} contentFit="cover" />
-          ) : (
-            <View style={[styles.photoPlaceholder, { borderColor: onFieldMuted }]}>
-              <Ionicons name="medical" size={56} color={onField} />
-            </View>
-          )}
+          <MedicationPhoto
+            source={medication?.photo_url}
+            style={styles.photo}
+            fallback={
+              <View style={[styles.photoPlaceholder, { borderColor: onFieldMuted }]}>
+                <Ionicons name="medical" size={56} color={onField} />
+              </View>
+            }
+          />
 
           <Text variant="displayMedium" color={onField} center style={styles.medName}>
             {medication?.name ?? 'Tu medicamento'}

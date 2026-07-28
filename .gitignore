@@ -31,7 +31,11 @@ yarn-error.*
 *.pem
 
 # local env files
-.env*.local
+# La plantilla de Expo solo ignoraba .env*.local, así que un .env con las
+# credenciales se habría subido al repositorio sin que nadie lo notara.
+.env
+.env.*
+!.env.example
 
 # typescript
 *.tsbuildinfo

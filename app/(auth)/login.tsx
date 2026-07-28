@@ -1,11 +1,14 @@
 import Button from '@/components/ui/Button';
+import Checkbox from '@/components/ui/Checkbox';
 import Surface from '@/components/ui/Surface';
 import Text from '@/components/ui/Text';
 import TextField from '@/components/ui/TextField';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme, useThemedStyles } from '@/context/ThemeContext';
+import { LINKS } from '@/lib/links';
 import { ColorScheme, SCREEN_MARGIN, SHAPE, SPACING, TOUCH } from '@/lib/theme';
 import { Ionicons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
 import React, { useState } from 'react';
 import {
     KeyboardAvoidingView,
@@ -38,6 +41,7 @@ type FieldErrors = {
   email?: string;
   password?: string;
   confirmPassword?: string;
+  legal?: string;
 };
 
 type ResetErrors = {
@@ -64,6 +68,8 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
 
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formNotice, setFormNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
@@ -114,6 +120,10 @@ export default function LoginScreen() {
       } else if (confirmPassword !== password) {
         nextErrors.confirmPassword = 'Las dos contraseñas no son iguales.';
       }
+
+      if (!acceptedLegal) {
+        nextErrors.legal = 'Marca la casilla para poder crear tu cuenta.';
+      }
     }
 
     return nextErrors;
@@ -160,6 +170,7 @@ export default function LoginScreen() {
     setPassword('');
     setConfirmPassword('');
     setFullName('');
+    setAcceptedLegal(false);
     setErrors({});
     setFormNotice({
       type: 'success',
@@ -173,6 +184,9 @@ export default function LoginScreen() {
     setFormNotice(null);
     setPassword('');
     setConfirmPassword('');
+    // El consentimiento se vuelve a pedir en cada intento de registro: nunca
+    // debe quedar marcado de una sesión anterior del formulario.
+    setAcceptedLegal(false);
   };
 
   const clearResetFieldError = (field: keyof ResetErrors) => {
@@ -535,6 +549,49 @@ export default function LoginScreen() {
                   />
                 )}
 
+                {/* Consentimiento expreso, no implícito: la app guarda datos
+                    de salud, que casi toda ley de datos trata como categoría
+                    especial. Una casilla que hay que marcar a mano —nunca
+                    premarcada— es lo que distingue "expreso" de "por usar la
+                    app ya aceptaste". Ver docs/terminos.html. */}
+                {!isLogin && (
+                  <Checkbox
+                    checked={acceptedLegal}
+                    onToggle={() => {
+                      setAcceptedLegal((prev) => !prev);
+                      clearFieldError('legal');
+                    }}
+                    disabled={loading}
+                    error={errors.legal}
+                    accessibilityLabel="Acepto los términos de uso y autorizo el tratamiento de mis datos de salud"
+                    label={
+                      <Text variant="bodyMedium">
+                        Acepto los{' '}
+                        <Text
+                          variant="bodyMedium"
+                          tone="primary"
+                          style={styles.legalLink}
+                          onPress={() => WebBrowser.openBrowserAsync(LINKS.terminos).catch(() => {})}
+                        >
+                          términos de uso
+                        </Text>{' '}
+                        y autorizo que PastilleroApp guarde mis datos de salud —los medicamentos y
+                        horarios que registre— como se explica en el{' '}
+                        <Text
+                          variant="bodyMedium"
+                          tone="primary"
+                          style={styles.legalLink}
+                          onPress={() => WebBrowser.openBrowserAsync(LINKS.privacidad).catch(() => {})}
+                        >
+                          aviso de privacidad
+                        </Text>
+                        .
+                      </Text>
+                    }
+                    style={styles.legalCheckbox}
+                  />
+                )}
+
                 <Button
                   title={isLogin ? 'Entrar' : 'Crear mi cuenta'}
                   icon={isLogin ? 'log-in-outline' : 'person-add-outline'}
@@ -633,7 +690,14 @@ const makeStyles = (t: ColorScheme) =>
       marginTop: SPACING.sm,
     },
     submit: {
-      marginTop: SPACING.xxl,
+      marginTop: SPACING.xl,
+    },
+    // ─── Consentimiento ───
+    legalCheckbox: {
+      marginTop: SPACING.xl,
+    },
+    legalLink: {
+      textDecorationLine: 'underline',
     },
     submitTight: {
       marginTop: SPACING.md,

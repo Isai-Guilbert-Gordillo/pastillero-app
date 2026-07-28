@@ -10,6 +10,7 @@ import WebTimePicker from '@/components/WebTimePicker';
 import { useCaregiver } from '@/context/CaregiverContext';
 import { useTheme, useThemedStyles } from '@/context/ThemeContext';
 import { computeDoseDates, scheduleMedicationNotifications, scheduleNativeAlarms } from '@/lib/notifications';
+import { uploadMedicationPhoto } from '@/lib/photos';
 import { supabase } from '@/lib/supabase';
 import { ColorScheme, SCREEN_MARGIN, SHAPE, SPACING, TOUCH, elevation } from '@/lib/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -220,37 +221,6 @@ export default function AddMedicationScreen() {
     }
   };
 
-  const uploadImage = async (uri: string): Promise<string | null> => {
-    try {
-      const fileName = `${activePatientId}/${Date.now()}.jpg`;
-      const response = await fetch(uri);
-      const blob = await response.blob();
-
-      const arrayBuffer = await new Response(blob).arrayBuffer();
-
-      const { error } = await supabase.storage
-        .from('medication-photos')
-        .upload(fileName, arrayBuffer, {
-          contentType: 'image/jpeg',
-          upsert: false,
-        });
-
-      if (error) {
-        console.error('Upload error:', error);
-        return null;
-      }
-
-      const { data } = supabase.storage
-        .from('medication-photos')
-        .getPublicUrl(fileName);
-
-      return data.publicUrl;
-    } catch (err) {
-      console.error('Upload exception:', err);
-      return null;
-    }
-  };
-
   // Cada error nombra el problema Y la salida, y se muestra bajo el campo que lo
   // causó — no en un modal que hay que cerrar antes de poder arreglarlo.
   const validateForm = (): FormErrors => {
@@ -311,9 +281,11 @@ export default function AddMedicationScreen() {
 
     setSaving(true);
 
+    // Se guarda la ruta dentro del bucket, no una URL: el bucket es privado y
+    // la foto se firma al mostrarla (ver lib/photos.ts).
     let photoUrl: string | null = null;
     if (imageUri) {
-      photoUrl = await uploadImage(imageUri);
+      photoUrl = await uploadMedicationPhoto(imageUri, activePatientId);
     }
 
     let endDate: string | null = null;
