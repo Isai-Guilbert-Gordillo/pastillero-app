@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
-import { Pressable, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import React from 'react';
+import { Pressable, StyleProp, StyleSheet, ViewStyle } from 'react-native';
 import Animated, {
   Easing,
+  FadeIn,
+  FadeOut,
+  LinearTransition,
   useAnimatedStyle,
-  useDerivedValue,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
@@ -15,7 +17,7 @@ import { MOTION, SHAPE, SPACING, STATE_LAYER, TOUCH, elevation, withAlpha } from
 // ─────────────────────────────────────────────────────────────────────────────
 // FAB extendido con el comportamiento de scroll de Material 3.
 //
-// Un FAB fijo y siempre extendido es un rectángulo opaco de ~180dp posado sobre
+// Un FAB fijo y siempre extendido es un rectángulo opaco de ~200dp posado sobre
 // la lista: mientras uno se desplaza acaba tapando justo lo que iba a tocar.
 // Material resuelve esto haciendo que el FAB REACCIONE al scroll:
 //
@@ -24,9 +26,12 @@ import { MOTION, SHAPE, SPACING, STATE_LAYER, TOUCH, elevation, withAlpha } from
 //   · Desplazándose hacia abajo → se contrae a un círculo de 72dp. La huella
 //     cae a un tercio y se queda en la esquina, fuera del camino de lectura.
 //
-// El rótulo no se recorta con `overflow` a ciegas: se mide una vez en su
-// tamaño real (`onLayout`) y la animación interpola hasta ese ancho, así que
-// sigue funcionando con el tamaño de fuente del sistema al máximo.
+// El rótulo se monta y desmonta, y el ancho lo resuelve el propio layout con
+// `LinearTransition`. La versión anterior medía el rótulo con `onLayout` y
+// animaba el ancho a mano: el problema es que esa medida llegaba ANTES de que
+// Reanimated registrara el worklet que la escuchaba, así que el valor se perdía
+// y el rótulo se quedaba plegado en 0 para siempre. Sin medición no hay orden
+// que respetar y el componente no puede quedarse a medias.
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface FabProps {
@@ -40,28 +45,29 @@ interface FabProps {
 
 export default function Fab({ label, icon = 'add', extended = true, onPress, style }: FabProps) {
   const { scheme } = useTheme();
-  const [labelWidth, setLabelWidth] = useState(0);
 
   const press = useSharedValue(0);
   const layerStyle = useAnimatedStyle(() => ({ opacity: press.value }));
   const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 - press.value * 0.04 }] }));
 
-  // Un solo valor gobierna la transición: 0 = círculo, 1 = extendido.
-  const progress = useDerivedValue(() =>
-    withTiming(extended && labelWidth > 0 ? 1 : 0, {
-      duration: MOTION.duration.long,
-      easing: Easing.bezier(...MOTION.easing.emphasized),
-    })
-  );
-
-  const labelWrapStyle = useAnimatedStyle(() => ({
-    width: labelWidth * progress.value,
-    marginLeft: SPACING.md * progress.value,
-    opacity: progress.value,
-  }));
-
   return (
-    <Animated.View style={[styles.wrap, scaleStyle, elevation(3, scheme), style]}>
+    // El contenedor lleva el color de fondo, no solo el Pressable: en Android la
+    // sombra de `elevation` se dibuja a partir del fondo de la vista elevada, y
+    // con fondo transparente no se dibuja nada. Un FAB sin sombra y translúcido
+    // deja ver el contenido por debajo y se lee como empalmado con la lista, que
+    // es exactamente lo que un botón flotante no debe parecer.
+    <Animated.View
+      layout={LinearTransition.duration(MOTION.duration.long).easing(
+        Easing.bezier(...MOTION.easing.emphasized).factory()
+      )}
+      style={[
+        styles.wrap,
+        { backgroundColor: scheme.primaryContainer },
+        scaleStyle,
+        elevation(3, scheme),
+        style,
+      ]}
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={label}
@@ -94,27 +100,18 @@ export default function Fab({ label, icon = 'add', extended = true, onPress, sty
 
         <Ionicons name={icon} size={32} color={scheme.onPrimaryContainer} />
 
-        <Animated.View style={[styles.labelWrap, labelWrapStyle]}>
-          <Text variant="labelLarge" tone="onPrimaryContainer" numberOfLines={1}>
-            {label}
-          </Text>
-        </Animated.View>
+        {extended && (
+          <Animated.View
+            entering={FadeIn.duration(MOTION.duration.medium)}
+            exiting={FadeOut.duration(MOTION.duration.short)}
+            style={styles.labelWrap}
+          >
+            <Text variant="labelLarge" tone="onPrimaryContainer" numberOfLines={1}>
+              {label}
+            </Text>
+          </Animated.View>
+        )}
       </Pressable>
-
-      {/* Medidor invisible: da el ancho real del rótulo con la fuente y el
-          tamaño de sistema vigentes, sin ocupar espacio ni ser accesible. */}
-      <View style={styles.measure} pointerEvents="none" accessibilityElementsHidden>
-        <Text
-          variant="labelLarge"
-          numberOfLines={1}
-          onLayout={(e) => {
-            const w = Math.ceil(e.nativeEvent.layout.width);
-            if (w > 0 && w !== labelWidth) setLabelWidth(w);
-          }}
-        >
-          {label}
-        </Text>
-      </View>
     </Animated.View>
   );
 }
@@ -135,13 +132,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   labelWrap: {
-    overflow: 'hidden',
-    justifyContent: 'center',
-  },
-  measure: {
-    position: 'absolute',
-    opacity: 0,
-    left: 0,
-    top: 0,
+    marginLeft: SPACING.md,
   },
 });

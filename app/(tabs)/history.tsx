@@ -10,7 +10,6 @@ import { computeDoseDatesInRange, reconcileDoseRecords } from '@/lib/doseSync';
 import { supabase } from '@/lib/supabase';
 import {
     ColorScheme,
-    NAV_BAR_HEIGHT,
     SCREEN_MARGIN,
     SHAPE,
     SPACING,
@@ -32,7 +31,6 @@ import {
     StyleSheet,
     View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Historial.
@@ -115,7 +113,6 @@ export default function HistoryScreen() {
   const { activePatientId } = useCaregiver();
   const { scheme } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const insets = useSafeAreaInsets();
   const { alert, snack } = useFeedback();
 
   const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()));
@@ -435,10 +432,10 @@ export default function HistoryScreen() {
         <ScrollView
           onScroll={onScroll}
           scrollEventThrottle={32}
-          contentContainerStyle={[
-            styles.scroll,
-            { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + SPACING.xxl },
-          ]}
+          // Ni el inset inferior ni el alto de la barra de navegación: el área
+          // de una pestaña ya termina arriba de la barra, y la barra ya absorbe
+          // el inset. Sumarlos aquí dejaba ~104dp de espacio muerto al final.
+          contentContainerStyle={[styles.scroll, { paddingBottom: SPACING.xxl }]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

@@ -313,7 +313,9 @@ La silueta recurrente es el **rectángulo de esquina generosa**: nada es un cír
 - **Barra superior:** `large` (título en Headline sobre dos líneas de alto) en las pantallas raíz; `small` con flecha de retroceso en las pantallas apiladas. Gana `level2` solo cuando hay contenido desplazado por debajo.
 - **Back del sistema** siempre funciona y hace lo mismo que la flecha.
 
-**La Regla del FAB que Cede el Paso.** El FAB nunca se queda quieto y extendido sobre una lista. Al desplazarse hacia abajo se contrae a un círculo de 72dp (`{components.fab-collapsed}`); arriba del todo, o al desplazarse hacia arriba, recupera su rótulo (`{components.fab-extended}`). Extendido mide ~180dp y se posa justo encima de la fila que la persona iba a tocar; contraído ocupa un tercio y se queda en la esquina. Además la lista reserva `TOUCH.primary + 24dp` de relleno inferior, para que el último renglón pueda desplazarse por encima del FAB y quedar libre.
+**La Regla del FAB que Cede el Paso.** El FAB nunca se queda quieto y extendido sobre una lista. Al desplazarse hacia abajo se contrae a un círculo de 72dp (`{components.fab-collapsed}`); arriba del todo, o al desplazarse hacia arriba, recupera su rótulo (`{components.fab-extended}`). Extendido mide ~300dp y se posa justo encima de la fila que la persona iba a tocar; contraído ocupa 80dp y se queda en la esquina. Además la lista reserva `TOUCH.primary + 32dp` de relleno inferior, para que el último renglón pueda desplazarse por encima del FAB y quedar libre.
+
+**La Regla del Área de la Pestaña.** Dentro de una pantalla con pestañas, el contenido NO suma el alto de la barra de navegación ni el inset inferior: react-navigation ya deja el área de contenido por encima de la barra, y la barra ya absorbe el inset por su cuenta. Sumarlos otra vez mete ~104dp de espacio muerto al final de cada lista y levanta cualquier elemento anclado abajo esa misma distancia, hasta plantarlo sobre el contenido. Los únicos que sí deben sumarlos son los elementos que viven en la raíz de la app, por encima de las pestañas: el snackbar es el caso.
 
 **La Regla del Rótulo en el FAB.** El FAB de esta app nunca es solo un "+". A 80 años, un ícono suelto en una esquina no dice qué va a pasar al tocarlo. El círculo es un estado transitorio del scroll, no la forma en reposo: en cuanto la lista se detiene arriba, el rótulo vuelve.
 
@@ -338,7 +340,8 @@ El compartimento del pastillero. Ancho completo menos márgenes, foto real del m
 - **Do** dar a cada control 64×64dp y 8dp de aire alrededor.
 - **Do** comunicar cada estado con forma **y** color, nunca con color solo.
 - **Do** usar snackbar para lo que ya pasó y diálogo solo para lo que hay que decidir.
-- **Do** aplicar insets de sistema explícitamente en cada pantalla, incluido el del teclado.
+- **Do** aplicar insets de sistema explícitamente en cada pantalla, incluido el del teclado — pero solo donde faltan. Ver *La Regla del Área de la Pestaña*.
+- **Do** dar fondo opaco a cualquier elemento elevado: en Android la sombra se dibuja a partir del fondo de la vista, así que un FAB translúcido no proyecta sombra y se lee empalmado con lo que tiene detrás.
 - **Do** dejar un solo `filled` por pantalla y un solo FAB en toda la app.
 - **Do** contraer el FAB al desplazarse hacia abajo, y reservar relleno inferior para que el último renglón de la lista quede libre de él.
 - **Do** apilar el rótulo y su botón cuando la fila mide menos de 200dp de ancho útil: un botón al lado del texto le deja migajas, y el texto se parte en cuatro renglones.
