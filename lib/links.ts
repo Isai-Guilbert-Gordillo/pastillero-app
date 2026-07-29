@@ -5,10 +5,12 @@
 // (ver docs/README.md). Google Play pide la URL de la política de privacidad
 // en la ficha de la tienda Y que sea accesible desde dentro de la app.
 //
-// ⚠️ CAMBIAR ESTA BASE por el dominio real antes de publicar en la tienda.
+// Si algún día se mueve a un dominio propio, este es el único lugar que hay
+// que tocar — pero ojo: la URL de la política de privacidad también está en la
+// ficha de Play Console, y esa se actualiza a mano.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SITIO_BASE = 'https://TU-USUARIO.github.io/pastillero-app';
+const SITIO_BASE = 'https://isai-guilbert-gordillo.github.io/pastillero-app';
 
 export const LINKS = {
   privacidad: `${SITIO_BASE}/privacidad.html`,

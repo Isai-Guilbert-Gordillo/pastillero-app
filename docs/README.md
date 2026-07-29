@@ -19,20 +19,19 @@ Todos los marcadores están en MAYÚSCULAS entre corchetes o con `EJEMPLO.COM`. 
 | `[REGIÓN DEL PROYECTO, p. ej. Este de EE. UU.]` | La región real de tu proyecto de Supabase: dashboard → *Project Settings → General → Region* |
 | `[X] días` (aparece en las dos páginas) | Los días que tu plan de Supabase conserva copias de seguridad: dashboard → *Database → Backups*. En el plan gratuito suelen ser 7 |
 
-Después de publicar el sitio, actualiza también la URL base en [`lib/links.ts`](../lib/links.ts) para que el enlace de **Perfil → Política de privacidad** apunte al sitio real.
+## Dónde están publicadas
 
-## Cómo publicarlas (GitHub Pages, gratis)
+GitHub Pages las sirve desde la carpeta `/docs` de la rama `master` (**Settings → Pages**, *Deploy from a branch*):
 
-1. Sube el repo a GitHub.
-2. En el repo: **Settings → Pages**.
-3. En *Source* elige **Deploy from a branch**, rama `main` y carpeta **`/docs`**. Guarda.
-4. En un par de minutos las páginas quedan en:
-   - `https://TU-USUARIO.github.io/NOMBRE-DEL-REPO/privacidad.html`
-   - `https://TU-USUARIO.github.io/NOMBRE-DEL-REPO/eliminar-cuenta.html`
+- https://isai-guilbert-gordillo.github.io/pastillero-app/privacidad.html
+- https://isai-guilbert-gordillo.github.io/pastillero-app/terminos.html
+- https://isai-guilbert-gordillo.github.io/pastillero-app/eliminar-cuenta.html
+
+Esa base también vive en [`lib/links.ts`](../lib/links.ts), que es de donde salen los enlaces de **Perfil** y del consentimiento del registro. Si el sitio se mueve a un dominio propio hay que tocar ese archivo **y** la ficha de Play Console, que guarda la URL de la política por separado.
 
 Cualquier hosting estático sirve igual (Netlify, Vercel, Cloudflare Pages). Lo único que Google exige es que las URLs sean **públicas, estables y accesibles sin iniciar sesión** — el revisor las va a abrir.
 
-> Si el repo es privado, GitHub Pages no publica en el plan gratuito. O lo haces público, o usas otro hosting.
+> Si algún día el repo pasa a privado, GitHub Pages deja de publicar en el plan gratuito y estas URLs mueren. Con la app ya en la tienda, eso rompe un requisito de Google.
 
 ## Al mantenerlas
 
