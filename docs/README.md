@@ -8,16 +8,19 @@ Tres páginas estáticas, sin dependencias externas (ni fuentes, ni scripts, ni 
 | `eliminar-cuenta.html` | Cómo borrar la cuenta y los datos | **Obligatoria** desde 2023 para toda app con creación de cuenta (*Contenido de la app → Eliminación de datos*). Google exige que se pueda pedir **sin instalar la app**, por eso existe esta página además del botón en Perfil |
 | `index.html` | Portada con los dos enlaces | Sirve como "sitio web de la app" en la ficha de la tienda |
 
-## Antes de publicarlas: rellenar los marcadores
+## Datos concretos que afirman estas páginas
 
-Todos los marcadores están en MAYÚSCULAS entre corchetes o con `EJEMPLO.COM`. Búscalos y reemplázalos en los tres archivos:
+No quedan marcadores. Estos son los valores que las páginas declaran hoy y de dónde salen — si alguno cambia, hay que actualizar el texto, porque un dato falso en una política de privacidad es peor que no tenerla:
 
-| Marcador | Qué poner |
-|---|---|
-| `CORREO-DE-CONTACTO@EJEMPLO.COM` | Un correo que revises de verdad. Va a quedar público y lo verán tanto usuarios como el revisor de Google. Considera uno dedicado a la app en vez de tu correo personal: esta dirección la van a recoger robots de spam |
-| `[NOMBRE DEL DESARROLLADOR O EMPRESA]` | El mismo nombre con el que registres la cuenta de developer en Google Play — si no coinciden, la revisión lo marca |
-| `[REGIÓN DEL PROYECTO, p. ej. Este de EE. UU.]` | La región real de tu proyecto de Supabase: dashboard → *Project Settings → General → Region* |
-| `[X] días` (aparece en las dos páginas) | Los días que tu plan de Supabase conserva copias de seguridad: dashboard → *Database → Backups*. En el plan gratuito suelen ser 7 |
+| Dato | Valor actual | De dónde sale |
+|---|---|---|
+| Responsable | Isai Guilbert Gordillo | Debe coincidir con el nombre de la cuenta de developer en Google Play; si no, la revisión lo marca |
+| Contacto | `duecontrola@gmail.com` | Buzón que hay que revisar de verdad: por ahí llegan las solicitudes de borrado de quien ya no tiene la app |
+| Ley aplicable | México, estado de Chihuahua | Tribunales de la ciudad de Chihuahua |
+| Región de los datos | Este de Estados Unidos (Ohio), `us-east-2` | Supabase → *Project Settings → General → Region* |
+| Copias de seguridad | **Ninguna** | El plan gratuito de Supabase no incluye respaldos programados |
+
+> ⚠️ **Si algún día subes a Supabase Pro**, el plan pasa a incluir hasta 7 días de respaldos y la afirmación "el borrado es definitivo, no queda copia" deja de ser cierta. Hay que reescribir esa parte en `privacidad.html` (sección 6) y en `eliminar-cuenta.html` el mismo día que cambies de plan.
 
 ## Dónde están publicadas
 
