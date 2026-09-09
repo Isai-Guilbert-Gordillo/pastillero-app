@@ -19,8 +19,8 @@
     "android": {
       "package": "com.pastilleroapp.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E8F5E9",
-        "foregroundImage": "./assets/images/icon.png"
+        "backgroundColor": "#F0FDFA",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
@@ -51,7 +51,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#E8F5E9"
+          "backgroundColor": "#F0FDFA"
         }
       ],
       [
@@ -66,8 +66,8 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/icon.png",
-          "color": "#00695C"
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#0F766E"
         }
       ],
       "./plugins/withLegacyStoragePermissions"
