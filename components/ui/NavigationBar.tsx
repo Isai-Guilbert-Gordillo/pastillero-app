@@ -82,7 +82,7 @@ function NavItem({
         />
         <Ionicons
           name={focused ? icons.active : icons.inactive}
-          size={28}
+          size={24}
           color={focused ? scheme.onPrimaryContainer : scheme.onSurfaceVariant}
         />
       </View>
@@ -159,12 +159,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: SPACING.md,
+    paddingTop: SPACING.sm,
     minHeight: TOUCH.min,
   },
   indicatorSlot: {
-    width: 64,
-    height: 40,
+    width: 56,
+    height: 30,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -173,6 +173,6 @@ const styles = StyleSheet.create({
     borderRadius: SHAPE.full,
   },
   label: {
-    marginTop: SPACING.xs,
+    marginTop: 2,
   },
 });

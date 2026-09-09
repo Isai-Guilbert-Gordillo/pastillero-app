@@ -450,7 +450,7 @@ export const APP_BAR_HEIGHT = {
 } as const;
 
 /** Alto del contenido de la barra de navegación inferior, sin el inset. */
-export const NAV_BAR_HEIGHT = 80;
+export const NAV_BAR_HEIGHT = 64;
 
 export const IS_ANDROID = Platform.OS === 'android';
 export const IS_WEB = Platform.OS === 'web';

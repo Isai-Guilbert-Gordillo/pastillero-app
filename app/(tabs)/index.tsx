@@ -1,14 +1,11 @@
-import { AdBanner } from '@/components/AdBanner';
 import { useFeedback } from '@/components/Feedback';
 import MedicationPhoto from '@/components/MedicationPhoto';
 import PatientBanner from '@/components/PatientBanner';
 import TreatmentEndedCard from '@/components/TreatmentEndedCard';
 import Button from '@/components/ui/Button';
-import Fab from '@/components/ui/Fab';
 import IconBadge from '@/components/ui/IconBadge';
 import Surface from '@/components/ui/Surface';
 import Text from '@/components/ui/Text';
-import TopAppBar from '@/components/ui/TopAppBar';
 import { useAuth } from '@/context/AuthContext';
 import { useCaregiver } from '@/context/CaregiverContext';
 import { useTheme, useThemedStyles } from '@/context/ThemeContext';
@@ -35,16 +32,15 @@ import { Medication } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     FlatList,
-    NativeScrollEvent,
-    NativeSyntheticEvent,
     Pressable,
     RefreshControl,
     StyleSheet,
     View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
     Easing,
     FadeInDown,
@@ -58,29 +54,23 @@ import Animated, {
 // ─────────────────────────────────────────────────────────────────────────────
 // Inicio — el pastillero abierto.
 //
-// La versión anterior repartía la atención entre un encabezado de degradado,
-// una tarjeta de alerta, filas compactas, un banner y la lista, todos con el
-// mismo peso visual de "tarjeta blanca con sombra". Aquí hay una sola jerarquía:
+// Una sola jerarquía, de arriba abajo:
 //
+//   0. SALUDO — avatar, nombre y fecha van integrados AL CONTENIDO (se desplazan
+//      con la lista), no en una barra superior fija. Es lo primero que se lee al
+//      abrir, pero no le roba espacio permanente a los medicamentos.
 //   1. LO QUE HAY QUE HACER AHORA — un bloque a escala de display con un solo
-//      botón de ancho completo. Es lo primero y lo más grande de la pantalla.
+//      botón de ancho completo. Lo más grande de la pantalla.
 //   2. LO QUE ESTÁ PENDIENTE — filas, no tarjetas, porque son variaciones de lo
 //      mismo y no merecen contenedor propio.
-//   3. TUS MEDICAMENTOS — la lista, cada renglón un compartimento.
-//
-// Y una sola acción principal, como FAB: agregar un medicamento.
-//
-// El FAB REACCIONA al scroll (comportamiento de Material 3). Un FAB extendido y
-// fijo es un rectángulo opaco de ~180dp posado sobre la lista, y lo que acababa
-// tapando era justo el botón "Ya la tomé" de una dosis pendiente. Al contraerse
-// a un círculo de 72dp en cuanto uno se desplaza hacia abajo, la huella cae a un
-// tercio y se queda en la esquina; al volver arriba recupera su rótulo, que es
-// cuando de verdad hace falta leerlo.
+//   3. TU MEDICAMENTO — la lista, cada renglón un compartimento con su foto.
+//   4. AGREGAR — la acción de alta vive como tarjeta punteada al pie de la lista
+//      (una sola acción de "agregar", sin FAB que compita).
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Espacio que la lista reserva al final para que su último elemento pueda
-// desplazarse por encima del FAB y quedar libre.
-const RESERVED_FOR_FAB = TOUCH.primary + SPACING.xxl;
+// Aire al final de la lista para que el último elemento no quede pegado a la
+// barra de navegación.
+const LIST_BOTTOM_PADDING = SPACING.xxl;
 
 export default function HomeScreen() {
   const { user } = useAuth();
@@ -88,14 +78,12 @@ export default function HomeScreen() {
   const { scheme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { snack } = useFeedback();
 
   const [medications, setMedications] = useState<Medication[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [scrolled, setScrolled] = useState(false);
-  const [fabExtended, setFabExtended] = useState(true);
-  const lastScrollY = useRef(0);
   const [, forceUpdate] = useState(0); // Para refrescar el countdown
   const [takenDoses, setTakenDoses] = useState<Set<string>>(new Set()); // Dosis ya tomadas (ocultar tarjeta urgente)
   const [confirmedDoseKeys, setConfirmedDoseKeys] = useState<Set<string>>(new Set()); // Igual, pero desde Supabase (sobrevive a cerrar la app)
@@ -516,9 +504,9 @@ export default function HomeScreen() {
               <Text variant="bodySmall" tone="variant">
                 {item.dose_mg} mg · cada {item.frequency_hours} h
               </Text>
-              <View style={styles.nextRow}>
-                <Ionicons name="alarm-outline" size={20} color={scheme.primary} />
-                <Text variant="labelMedium" tone="primary">
+              <View style={styles.nextChip}>
+                <Ionicons name="alarm-outline" size={16} color={scheme.onPrimaryContainer} />
+                <Text variant="labelMedium" color={scheme.onPrimaryContainer}>
                   Próxima {formatTime(nextDose)}
                 </Text>
               </View>
@@ -570,9 +558,18 @@ export default function HomeScreen() {
         <Surface
           level={1}
           padded
-          borderColor={isNow ? scheme.warning : undefined}
+          shape="extraLarge"
+          borderColor={isNow ? scheme.warning : scheme.outlineVariant}
           style={styles.hero}
         >
+          {/* Eco del arte lineal del prototipo: una cápsula tenue integrada a la
+              textura de la tarjeta, sin robar contraste al contenido. */}
+          <Ionicons
+            name="medical"
+            size={120}
+            color={scheme.primary}
+            style={styles.heroArt}
+          />
           <Animated.View
             style={[
               styles.heroBadge,
@@ -649,8 +646,43 @@ export default function HomeScreen() {
       </View>
     ));
 
+  // ─── Saludo integrado al contenido (reemplaza la barra superior fija) ───
+  const renderGreeting = () => (
+    <View style={[styles.greeting, { paddingTop: insets.top + SPACING.sm }]}>
+      <IconBadge
+        name="person"
+        color={scheme.onPrimaryContainer}
+        backgroundColor={scheme.primaryContainer}
+        size={52}
+      />
+      <View style={styles.greetingText}>
+        <Text variant="headlineSmall" numberOfLines={1}>
+          Hola, {userName}
+        </Text>
+        <Text variant="bodyMedium" tone="variant" numberOfLines={1} style={styles.greetingDate}>
+          {today}
+        </Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Permisos de notificaciones"
+        accessibilityHint="Abre la guía para revisar los permisos de alarma y notificación"
+        onPress={() => router.push('/permissions-guide')}
+        style={({ pressed }) => [
+          styles.bellButton,
+          { backgroundColor: scheme.surfaceContainer, borderColor: scheme.outlineVariant },
+          pressed && styles.cardPressed,
+        ]}
+      >
+        <Ionicons name="notifications-outline" size={24} color={scheme.onSurfaceVariant} />
+      </Pressable>
+    </View>
+  );
+
   const renderHeader = () => (
     <View style={styles.headerBlock}>
+      {renderGreeting()}
+
       {expiredTreatment && (
         <TreatmentEndedCard
           medication={expiredTreatment.medication}
@@ -697,31 +729,40 @@ export default function HomeScreen() {
     </View>
   );
 
-  // Banner de anuncios al final de la lista — lejos del botón "Ya la tomé"
-  // para que un toque accidental no saque a la abuela de la app en plena alarma.
-  const renderFooter = () => (medications.length > 0 ? <AdBanner /> : null);
-
-  // El FAB se contrae al bajar y se extiende al subir o al llegar arriba.
-  // El umbral de 6dp evita que tiemble entre extendido y contraído con el
-  // micro-movimiento de un dedo que solo está apoyado en la pantalla.
-  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const y = e.nativeEvent.contentOffset.y;
-    if (y > 4 !== scrolled) setScrolled(y > 4);
-
-    const delta = y - lastScrollY.current;
-    if (y <= 8) {
-      if (!fabExtended) setFabExtended(true);
-    } else if (delta > 6) {
-      if (fabExtended) setFabExtended(false);
-    } else if (delta < -6) {
-      if (!fabExtended) setFabExtended(true);
-    }
-    lastScrollY.current = y;
+  // ─── Pie de lista: alta de medicamento ───
+  // La acción de "agregar" es una sola en toda la app y vive aquí, como tarjeta
+  // punteada de invitación, en vez de un FAB flotante.
+  const renderFooter = () => {
+    if (medications.length === 0) return null;
+    return (
+      <View style={styles.footerBlock}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Agregar medicamento"
+          onPress={() => router.push('/add')}
+          style={({ pressed }) => [
+            styles.addCard,
+            { borderColor: scheme.primary },
+            pressed && styles.cardPressed,
+          ]}
+        >
+          <IconBadge
+            name="add"
+            color={scheme.onPrimaryContainer}
+            backgroundColor={scheme.primaryContainer}
+            size={40}
+            iconSize={24}
+          />
+          <Text variant="titleSmall" tone="primary">
+            Agregar medicamento
+          </Text>
+        </Pressable>
+      </View>
+    );
   };
 
   return (
     <View style={styles.container}>
-      <TopAppBar title={`Hola, ${userName}`} subtitle={today} scrolled={scrolled} />
       <PatientBanner />
 
       <FlatList
@@ -731,18 +772,9 @@ export default function HomeScreen() {
         ListHeaderComponent={renderHeader}
         ListFooterComponent={renderFooter}
         ListEmptyComponent={!loading ? renderEmpty : null}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
         contentContainerStyle={[
           medications.length === 0 ? styles.emptyList : styles.list,
-          // Relleno CONSTANTE, para que la decisión de flotar no dependa de él.
-          // OJO con el inset inferior y el alto de la barra de navegación: NO
-          // van aquí. La pantalla de una pestaña ya termina arriba de la barra
-          // (react-navigation la deja fuera del área de contenido) y la barra ya
-          // absorbe el inset por su cuenta. Sumarlos otra vez metía ~104dp de
-          // espacio muerto al final de la lista y, peor, subía el FAB esa misma
-          // distancia hasta plantarlo justo encima del último elemento.
-          { paddingBottom: RESERVED_FOR_FAB },
+          { paddingBottom: LIST_BOTTOM_PADDING },
         ]}
         refreshControl={
           <RefreshControl
@@ -755,16 +787,6 @@ export default function HomeScreen() {
         }
         showsVerticalScrollIndicator={false}
       />
-
-      {/* Una sola acción principal en toda la app. */}
-      {medications.length > 0 && (
-        <Fab
-          label="Agregar medicamento"
-          extended={fabExtended}
-          onPress={() => router.push('/add')}
-          style={styles.fabFloating}
-        />
-      )}
     </View>
   );
 }
@@ -784,15 +806,45 @@ const makeStyles = (t: ColorScheme) =>
       paddingHorizontal: SCREEN_MARGIN,
     },
     headerBlock: {
-      paddingTop: SPACING.sm,
+      paddingTop: 0,
     },
     cardPressed: {
       opacity: 0.85,
+    },
+    // ─── Bloque 0: saludo integrado ───
+    greeting: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.md,
+      marginBottom: SPACING.xl,
+    },
+    greetingText: {
+      flex: 1,
+    },
+    greetingDate: {
+      marginTop: 2,
+      textTransform: 'capitalize',
+    },
+    bellButton: {
+      width: 52,
+      height: 52,
+      borderRadius: SHAPE.large,
+      borderWidth: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
     // ─── Bloque 1: lo que hay que hacer ahora ───
     hero: {
       marginBottom: SPACING.lg,
       alignItems: 'flex-start',
+      overflow: 'hidden',
+    },
+    heroArt: {
+      position: 'absolute',
+      top: -22,
+      right: -18,
+      opacity: 0.06,
+      transform: [{ rotate: '-12deg' }],
     },
     heroBadge: {
       flexDirection: 'row',
@@ -869,10 +921,15 @@ const makeStyles = (t: ColorScheme) =>
     medInfo: {
       flex: 1,
     },
-    nextRow: {
+    nextChip: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: SPACING.sm,
+      alignSelf: 'flex-start',
+      gap: SPACING.xs,
+      backgroundColor: t.primaryContainer,
+      borderRadius: SHAPE.full,
+      paddingHorizontal: SPACING.md,
+      paddingVertical: SPACING.xs,
       marginTop: SPACING.sm,
     },
     // ─── Estado vacío ───
@@ -887,15 +944,20 @@ const makeStyles = (t: ColorScheme) =>
       marginTop: SPACING.md,
       marginBottom: SPACING.xxl,
     },
-    // ─── FAB ───
-    // Pegado a la esquina inferior derecha del ÁREA DE LA PESTAÑA. Esa área ya
-    // excluye la barra de navegación, así que 16dp aquí son 16dp reales por
-    // encima de ella. Sumar `NAV_BAR_HEIGHT` o el inset inferior —como estaba
-    // antes— lo levantaba ~104dp y lo dejaba plantado sobre el último elemento
-    // de la lista en vez de en su esquina.
-    fabFloating: {
-      position: 'absolute',
-      right: SCREEN_MARGIN,
-      bottom: SPACING.lg,
+    // ─── Pie de lista: alta ───
+    footerBlock: {
+      marginTop: SPACING.lg,
+      gap: SPACING.md,
+    },
+    addCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: SPACING.md,
+      minHeight: TOUCH.min,
+      borderRadius: SHAPE.large,
+      borderWidth: 1.5,
+      borderStyle: 'dashed',
+      paddingHorizontal: SPACING.lg,
     },
   });
