@@ -92,7 +92,6 @@ pastillero-app/
 │   ├── Feedback.tsx               # Snackbar + bottom sheet + diálogo (useFeedback)
 │   ├── MedicationPhoto.tsx        # Foto del medicamento: firma la URL del bucket privado
 │   ├── PatientBanner.tsx          # Banner "Viendo la cuenta de X" en modo cuidador
-│   ├── AdBanner.tsx               # Placeholder de banner publicitario (ver Limitaciones)
 │   ├── WebTimePicker.tsx          # Selector de hora propio para la versión web
 │   └── ui/                        # Design system Material 3: Text, Surface, Button, Chip,
 │                                  # TextField, TopAppBar, NavigationBar, Fab, ListItem,
@@ -202,15 +201,6 @@ En [`app.json`](./app.json), si vas a publicar tu propia copia, cambia:
 - `expo.name`, `expo.slug`
 - `expo.ios.bundleIdentifier` y `expo.android.package` (hoy `com.pastilleroapp.app`)
 - `expo.extra.eas.projectId` (lo genera EAS al correr `eas init`)
-
-### 6. (Opcional) Anuncios AdMob reales
-
-`components/AdBanner.tsx` hoy es un placeholder visual (no depende de ningún SDK de anuncios). Para anuncios reales:
-
-1. `npm install react-native-google-mobile-ads`
-2. Agrega el plugin correspondiente en `app.json` con tus IDs de AdMob.
-3. Reemplaza el contenido de `AdBanner.tsx` por el componente `BannerAd` real.
-4. Genera un nuevo development build (los módulos nativos no aparecen en Expo Go).
 
 ## Ejecutar en desarrollo
 
@@ -347,7 +337,7 @@ npx eas build --profile production --platform android   # App Bundle para Play S
 
 - **Las alarmas del paciente son 100% locales al dispositivo** — a propósito: no deben depender de internet. El cuidador **sí** recibe push desde el servidor cuando una dosis queda sin confirmar (ver [Avisos push al cuidador](#avisos-push-al-cuidador)), pero un cambio de horario hecho por el cuidador sigue sin sonar en el teléfono del paciente hasta que esa persona abre la app.
 - **Solo una tarjeta de "dosis urgente" a la vez** en Inicio: si dos medicamentos coinciden en horario, el segundo solo aparece en la lista normal, sin la misma urgencia visual.
-- **AdBanner es un placeholder** — no hay integración real de AdMob todavía (ver [paso 5 de instalación](#5-opcional-anuncios-admob-reales)).
+- **La app no tiene anuncios.** Antes había un placeholder visual (`AdBanner`) que se quitó antes de publicar; no hay ningún SDK de anuncios integrado.
 - **iOS no está configurado/probado** — `app.json` declara `bundleIdentifier` y permisos de iOS, pero el desarrollo y las pruebas se han hecho en Android; la alarma nativa vía `expo-intent-launcher` es Android-only.
 - **Editar el horario de un medicamento crea una alarma nueva** en la app de Reloj sin borrar la anterior — hay que borrar la vieja ahí manualmente.
 - **El correo por defecto de Supabase** (sin SMTP propio) tiene un límite muy bajo de envíos por hora — suficiente para desarrollo, no para producción real. Ver el [paso 4 de instalación](#4-configurar-el-correo-smtp-propio).
@@ -365,6 +355,8 @@ npx eas build --profile production --platform android   # App Bundle para Play S
 | "No se pudo eliminar la cuenta" en Perfil → Eliminar mi cuenta | Falta correr la migración "Eliminar mi cuenta" — sin ella la función `delete_my_account()` no existe en la base |
 | La app no arranca: "Faltan EXPO_PUBLIC_SUPABASE_URL..." | Falta el archivo `.env` (ver [paso 3](#3-variables-de-entorno)). En builds de EAS, faltan las variables de entorno del perfil |
 | El cuidador no recibe avisos de dosis sin confirmar | Revisa en orden: extensión `pg_net` activa, job `notify-caregivers-missed-doses` en `cron.job`, fila del cuidador en `device_tokens`, y que el aviso no se esté probando en Expo Go (el token push necesita un build nativo) |
+| El código de invitación de cuidador dice "no es válido" siendo nuevo | Falta correr la migración "Expiración y límite de intentos" al final de `supabase-schema.sql` — la función `redeem_caregiver_invite()` vieja no filtra por `expires_at` |
+| "Demasiados intentos" al canjear un código de invitación | Límite de seguridad: 10 intentos cada 15 minutos por cuenta, para que un código de 6 caracteres no se pueda adivinar por fuerza bruta contra la API. Espera y vuelve a intentar |
 
 ## Licencia
 

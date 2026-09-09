@@ -37,7 +37,7 @@ Reminders ring through Android's actual Clock app (`expo-intent-launcher` → `A
 - No server-side push notifications — all alarms/reminders are scheduled locally on-device.
 - Known limitation: only one "urgent dose" card is highlighted at a time on Inicio; if two medications are due at close times, only the nearest gets the high-urgency treatment.
 - Editing a medication's schedule creates a new system alarm without deleting the old one (old one must be removed manually from the Clock app).
-- AdBanner is a visual placeholder only — no real AdMob integration yet.
+- No ads. A visual placeholder banner (AdBanner) existed during development and was removed before publishing; no ad SDK is integrated.
 - Password reset uses a 6+ digit emailed code (not a deep link), to work around Supabase's default email template limits; requires custom SMTP for reliable delivery.
 
 ## Brand Commitments

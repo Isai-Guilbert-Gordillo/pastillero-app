@@ -42,5 +42,5 @@ Si cambia lo que la app recoge o con quién lo comparte, hay que actualizar **la
 
 Dos cosas de la política dependen de decisiones que hoy no están tomadas y hay que revisar antes de tocarlas:
 
-- **Publicidad.** La política afirma que no hay anuncios ni rastreadores. Es cierto hoy — `components/AdBanner.tsx` es solo un recuadro de relleno, sin SDK. Si algún día se integra AdMob de verdad, hay que reescribir esa parte y volver a declararlo en la tienda.
+- **Publicidad.** La política afirma que no hay anuncios ni rastreadores. Es cierto hoy — no hay ningún SDK de anuncios (el placeholder `AdBanner` se quitó antes de publicar). Si algún día se integra AdMob de verdad, hay que reescribir esa parte y volver a declararlo en la tienda.
 - **Analítica y reportes de fallos.** Igual: hoy no hay ninguno. Si se agrega Sentry o similar, deja de ser cierto que no se recoge nada de diagnóstico.
