@@ -1,3 +1,4 @@
+import MedicalDisclaimer from '@/components/MedicalDisclaimer';
 import Button from '@/components/ui/Button';
 import Checkbox from '@/components/ui/Checkbox';
 import Surface from '@/components/ui/Surface';
@@ -355,6 +356,14 @@ export default function LoginScreen() {
             </Text>
           </View>
 
+          {/* ─── Descargo médico visible: el escudo, antes de crear la cuenta ─── */}
+          {authView === 'form' && (
+            <MedicalDisclaimer
+              onReadTerms={() => WebBrowser.openBrowserAsync(LINKS.terminos).catch(() => {})}
+              style={styles.disclaimer}
+            />
+          )}
+
           {/* ─── Formulario ─── */}
           <Surface level={1} padded>
             <Text variant="headlineSmall" style={styles.formTitle}>
@@ -563,10 +572,10 @@ export default function LoginScreen() {
                     }}
                     disabled={loading}
                     error={errors.legal}
-                    accessibilityLabel="Acepto los términos de uso y autorizo el tratamiento de mis datos de salud"
+                    accessibilityLabel="He leído y acepto los términos de uso y el aviso de privacidad, entiendo que esta app no sustituye el consejo médico, y autorizo el tratamiento de mis datos de salud"
                     label={
                       <Text variant="bodyMedium">
-                        Acepto los{' '}
+                        He leído y acepto los{' '}
                         <Text
                           variant="bodyMedium"
                           tone="primary"
@@ -574,8 +583,12 @@ export default function LoginScreen() {
                           onPress={() => WebBrowser.openBrowserAsync(LINKS.terminos).catch(() => {})}
                         >
                           términos de uso
-                        </Text>{' '}
-                        y autorizo que PastilleroApp guarde mis datos de salud —los medicamentos y
+                        </Text>
+                        , y entiendo que{' '}
+                        <Text variant="labelLarge" tone="default">
+                          esta app es solo una ayuda para recordar y no sustituye el consejo de mi médico
+                        </Text>
+                        . Autorizo que PastilleroApp guarde mis datos de salud —los medicamentos y
                         horarios que registre— como se explica en el{' '}
                         <Text
                           variant="bodyMedium"
@@ -653,6 +666,10 @@ const makeStyles = (t: ColorScheme) =>
     },
     brandName: {
       marginBottom: SPACING.xs,
+    },
+    // ─── Descargo médico ───
+    disclaimer: {
+      marginBottom: SPACING.lg,
     },
     // ─── Formulario ───
     formTitle: {

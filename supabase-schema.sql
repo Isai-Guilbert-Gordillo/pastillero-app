@@ -819,3 +819,88 @@ SELECT cron.schedule(
   '30 3 * * 0',
   $job$SELECT prune_stale_device_tokens();$job$
 );
+
+-- ============================================
+-- MIGRACIÓN: Expiración y límite de intentos en el código de invitación
+--
+-- invite_code son 6 caracteres de un alfabeto de 33 (sin 0/O/1/I) — unas
+-- 1.300 millones de combinaciones. A mano nadie lo adivina, pero el código
+-- no expiraba nunca y el RPC redeem_caregiver_invite no tenía límite de
+-- intentos: una cuenta cualquiera podía llamarlo en bucle probando códigos
+-- hasta pegarle a una invitación pendiente de otra persona (fuerza bruta
+-- contra la API de Supabase, no contra la app).
+--
+-- Dos capas, ninguna depende de que el cliente se porte bien:
+--  1. expires_at: la invitación deja de ser válida a las 24 h de creada
+--     (default en la columna, no requiere tocar el cliente que la inserta).
+--  2. invite_redemption_attempts: máximo 10 intentos de canje cada 15
+--     minutos por usuario. Sin RLS ni policies — solo la accede el propio
+--     redeem_caregiver_invite() como SECURITY DEFINER, nunca el cliente
+--     directo.
+-- ============================================
+ALTER TABLE caregiver_links
+  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '24 hours');
+
+COMMENT ON COLUMN caregiver_links.expires_at IS 'La invitación deja de poder canjearse después de esta fecha (24 h desde su creación)';
+
+CREATE TABLE IF NOT EXISTS invite_redemption_attempts (
+  user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  first_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE invite_redemption_attempts ENABLE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION redeem_caregiver_invite(p_code TEXT)
+RETURNS TABLE (patient_user_id UUID, patient_email TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+  v_row caregiver_links%ROWTYPE;
+  v_caregiver_email TEXT;
+  v_attempts invite_redemption_attempts%ROWTYPE;
+BEGIN
+  SELECT * INTO v_attempts FROM invite_redemption_attempts WHERE user_id = auth.uid();
+
+  IF v_attempts.user_id IS NULL THEN
+    INSERT INTO invite_redemption_attempts (user_id, attempt_count, first_attempt_at)
+    VALUES (auth.uid(), 1, now());
+  ELSIF v_attempts.first_attempt_at < now() - INTERVAL '15 minutes' THEN
+    UPDATE invite_redemption_attempts
+      SET attempt_count = 1, first_attempt_at = now()
+      WHERE user_id = auth.uid();
+  ELSIF v_attempts.attempt_count >= 10 THEN
+    RAISE EXCEPTION 'too_many_attempts';
+  ELSE
+    UPDATE invite_redemption_attempts
+      SET attempt_count = attempt_count + 1
+      WHERE user_id = auth.uid();
+  END IF;
+
+  SELECT * INTO v_row FROM caregiver_links
+    WHERE invite_code = upper(p_code) AND status = 'pending' AND expires_at > now();
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'invalid_or_used_code';
+  END IF;
+
+  IF v_row.patient_user_id = auth.uid() THEN
+    RAISE EXCEPTION 'cannot_link_self';
+  END IF;
+
+  SELECT email INTO v_caregiver_email FROM auth.users WHERE id = auth.uid();
+
+  UPDATE caregiver_links
+    SET caregiver_user_id = auth.uid(),
+        caregiver_email = v_caregiver_email,
+        status = 'accepted',
+        accepted_at = now()
+    WHERE id = v_row.id;
+
+  DELETE FROM invite_redemption_attempts WHERE user_id = auth.uid();
+
+  RETURN QUERY SELECT v_row.patient_user_id, v_row.patient_email;
+END;
+$$;

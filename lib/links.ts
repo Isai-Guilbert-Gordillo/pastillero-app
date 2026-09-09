@@ -27,4 +27,4 @@ export const LINKS = {
  * ⚠️ SUBIR ESTE NÚMERO cada vez que cambie el texto de docs/terminos.html o
  * docs/privacidad.html de forma sustancial.
  */
-export const LEGAL_VERSION = 1;
+export const LEGAL_VERSION = 2;

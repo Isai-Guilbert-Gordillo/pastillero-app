@@ -1,4 +1,5 @@
 import { useFeedback } from '@/components/Feedback';
+import MedicalDisclaimer from '@/components/MedicalDisclaimer';
 import Button from '@/components/ui/Button';
 import Chip from '@/components/ui/Chip';
 import IconBadge from '@/components/ui/IconBadge';
@@ -327,6 +328,9 @@ export default function ProfileScreen() {
               <Text variant="displaySmall" tone="onPrimaryContainer" style={styles.codeValue}>
                 {pendingInviteCode}
               </Text>
+              <Text variant="labelSmall" tone="onPrimaryContainer">
+                Válido por 24 horas
+              </Text>
             </View>
           )}
 
@@ -394,6 +398,12 @@ export default function ProfileScreen() {
         <Text variant="labelMedium" tone="variant" style={styles.sectionLabel}>
           ACERCA DE
         </Text>
+
+        <MedicalDisclaimer
+          onReadTerms={() => WebBrowser.openBrowserAsync(LINKS.terminos).catch(() => {})}
+          style={styles.disclaimer}
+        />
+
         <Surface level={1} padded>
           <ListItem
             leading={
@@ -494,6 +504,9 @@ const makeStyles = (t: ColorScheme) =>
     },
     sectionHint: {
       marginTop: SPACING.xs,
+      marginBottom: SPACING.md,
+    },
+    disclaimer: {
       marginBottom: SPACING.md,
     },
     group: {

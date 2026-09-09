@@ -92,6 +92,7 @@ export function CaregiverProvider({ children }: { children: React.ReactNode }) {
         .select('invite_code')
         .eq('patient_user_id', user.id)
         .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle(),
@@ -192,6 +193,9 @@ export function CaregiverProvider({ children }: { children: React.ReactNode }) {
       }
       if (msg.includes('cannot_link_self')) {
         return { patientEmail: null, error: 'No puedes usar tu propio código.' };
+      }
+      if (msg.includes('too_many_attempts')) {
+        return { patientEmail: null, error: 'Demasiados intentos. Espera unos minutos y vuelve a intentar.' };
       }
       return { patientEmail: null, error: 'No se pudo vincular. Intenta de nuevo.' };
     }
