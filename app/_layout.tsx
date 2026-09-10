@@ -199,11 +199,8 @@ function RootLayoutNav() {
     if (loading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
-    // El prototipo es contenido estático sin datos de usuario: se deja ver
-    // sin sesión para poder revisarlo antes de integrarlo.
-    const isPrototype = segments[0] === 'prototype';
 
-    if (!user && !inAuthGroup && !isPrototype) {
+    if (!user && !inAuthGroup) {
       router.replace('/(auth)/login');
     } else if (user && inAuthGroup) {
       router.replace('/(tabs)');
@@ -244,13 +241,6 @@ function RootLayoutNav() {
       >
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen
-          name="prototype"
-          options={{
-            presentation: 'card',
-            animation: 'slide_from_right',
-          }}
-        />
         <Stack.Screen
           name="add"
           options={{
