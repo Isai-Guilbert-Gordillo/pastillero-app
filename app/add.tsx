@@ -1,3 +1,4 @@
+import DonMemo from '@/components/DonMemo';
 import { useFeedback } from '@/components/Feedback';
 import PatientBanner from '@/components/PatientBanner';
 import Button from '@/components/ui/Button';
@@ -18,8 +19,9 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+    BackHandler,
     KeyboardAvoidingView,
     Platform,
     Pressable,
@@ -102,6 +104,58 @@ interface FormErrors {
   duration?: string;
 }
 
+// ─── Los pasos del asistente ─────────────────────────────────────────────────
+// Una pregunta por pantalla. Don Memo la hace; el control de abajo la contesta.
+// Sus líneas apuntan a la caja o a la receta cuando hace falta, pero NUNCA
+// dicen qué tomar ni cuánto: eso lo escribe la persona (ver *La Regla de Don
+// Memo Callado* en DESIGN.md).
+const STEPS = [
+  {
+    key: 'foto',
+    pregunta: '¿Le tomamos una foto?',
+    memo: 'Así reconoces la pastilla de un vistazo. Si no quieres, la saltamos — no hace falta.',
+    campos: [] as (keyof FormErrors)[],
+  },
+  {
+    key: 'que',
+    pregunta: '¿Qué medicina es?',
+    memo: 'Copia el nombre y los miligramos tal como vienen en la caja.',
+    campos: ['name', 'dose'] as (keyof FormErrors)[],
+  },
+  {
+    key: 'cada',
+    pregunta: '¿Cada cuántas horas?',
+    memo: 'Si no te acuerdas, viene en la receta.',
+    campos: ['frequency'] as (keyof FormErrors)[],
+  },
+  {
+    key: 'hora',
+    pregunta: '¿A qué hora es la primera?',
+    memo: 'La del día. Las demás las calculo yo solo.',
+    campos: [] as (keyof FormErrors)[],
+  },
+  {
+    key: 'dias',
+    pregunta: '¿Qué días la tomas?',
+    memo: 'Si es todos, déjalo como está.',
+    campos: ['days'] as (keyof FormErrors)[],
+  },
+  {
+    key: 'cuanto',
+    pregunta: '¿Por cuánto tiempo?',
+    memo: 'Para siempre, o por unos días como un antibiótico.',
+    campos: ['duration'] as (keyof FormErrors)[],
+  },
+  {
+    key: 'resumen',
+    pregunta: 'Revisemos juntos',
+    memo: 'Si algo no cuadra, regresamos y lo cambiamos.',
+    campos: [] as (keyof FormErrors)[],
+  },
+] as const;
+
+const LAST_STEP = STEPS.length - 1;
+
 export default function AddMedicationScreen() {
   const { activePatientId, isViewingOther, activePatientLabel } = useCaregiver();
   const { scheme } = useTheme();
@@ -125,10 +179,23 @@ export default function AddMedicationScreen() {
   const [regimenType, setRegimenType] = useState<'indefinido' | 'por_tiempo'>('indefinido');
   const [durationDays, setDurationDays] = useState('');
   const [errors, setErrors] = useState<FormErrors>({});
+  const [step, setStep] = useState(0);
 
   const clearError = (field: keyof FormErrors) => {
     setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
   };
+
+  // El back del sistema retrocede un paso, igual que la flecha — y solo sale
+  // de la pantalla cuando ya estás en el primero. Dejar que cierre la pantalla
+  // a media captura tiraría todo lo escrito.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (step === 0) return false;
+      setStep((s) => s - 1);
+      return true;
+    });
+    return () => sub.remove();
+  }, [step]);
 
   const pickImage = async (fromCamera: boolean) => {
     let result: ImagePicker.ImagePickerResult;
@@ -242,33 +309,50 @@ export default function AddMedicationScreen() {
     return next;
   };
 
-  // Resumen en lenguaje llano antes de guardar — para atrapar un dedazo
-  // (ej. tocar "4 h" en vez de "8 h") antes de que se programe la alarma.
-  // Esta SÍ es una decisión que debe interrumpir: después de aquí suena una
-  // alarma real en el teléfono.
-  const confirmAndSave = () => {
-    const found = validateForm();
-    setErrors(found);
+  /** Toma de `src` solo las claves pedidas que sí traen error. */
+  const pickErrors = (src: FormErrors, keys: readonly (keyof FormErrors)[]): FormErrors => {
+    const out: FormErrors = {};
+    keys.forEach((k) => {
+      if (src[k]) out[k] = src[k];
+    });
+    return out;
+  };
+
+  // Solo se valida lo del paso actual: marcar en rojo un campo que la persona
+  // todavía no ha visto es regañarla por algo que no hizo.
+  const goNext = () => {
+    const found = pickErrors(validateForm(), STEPS[step].campos);
     if (Object.keys(found).length > 0) {
-      snack('Faltan datos. Revisa lo que está marcado en rojo.', { tone: 'error' });
+      setErrors((prev) => ({ ...prev, ...found }));
       return;
     }
-    const finalFrequency = frequencyHours === 'custom' ? customFrequency : frequencyHours;
-    const daysLabel =
-      selectedDays.length === 7
-        ? 'Todos los días'
-        : DAYS_OF_WEEK.filter((d) => selectedDays.includes(d.value)).map((d) => d.full).join(', ');
-    const durationLabel =
-      regimenType === 'indefinido' ? 'Para siempre' : `Por ${durationDays} días`;
+    setStep((s) => Math.min(s + 1, LAST_STEP));
+  };
 
-    alert(
-      'Revisa antes de guardar',
-      `${name.trim()} — ${doseMg} mg\nCada ${finalFrequency} horas, empezando a las ${formatTime12h(startTime)}\nDías: ${daysLabel}\nDuración: ${durationLabel}`,
-      [
-        { text: 'Corregir', style: 'cancel' },
-        { text: 'Guardar', onPress: handleSave },
-      ]
-    );
+  const goBack = () => {
+    if (step === 0) {
+      router.back();
+      return;
+    }
+    setStep((s) => s - 1);
+  };
+
+  // El paso de resumen REEMPLAZA al diálogo de confirmación que había antes.
+  // Sigue siendo una parada obligatoria —después de aquí suena una alarma real
+  // en el teléfono— pero una pantalla que se recorre es mejor freno que un
+  // modal que se cierra de un toque sin leerlo.
+  const handleFinish = () => {
+    const found = validateForm();
+    setErrors(found);
+    if (Object.keys(found).length === 0) {
+      handleSave();
+      return;
+    }
+    // Regresar al primer paso que tenga el problema, en vez de dejar a la
+    // persona buscando dónde está el rojo.
+    const culpable = STEPS.findIndex((s) => s.campos.some((c) => found[c]));
+    snack('Falta un dato. Te regreso a donde está.', { tone: 'error' });
+    if (culpable >= 0) setStep(culpable);
   };
 
   const handleSave = async () => {
@@ -398,23 +482,18 @@ export default function AddMedicationScreen() {
   };
 
   const isCustomTime = !PRESET_TIMES.includes(startTime);
+  const finalFrequencyLabel = frequencyHours === 'custom' ? customFrequency : frequencyHours;
+  const daysLabel =
+    selectedDays.length === 7
+      ? 'Todos los días'
+      : DAYS_OF_WEEK.filter((d) => selectedDays.includes(d.value)).map((d) => d.full).join(', ');
+  const durationLabel =
+    regimenType === 'indefinido' ? 'Para siempre' : `Por ${durationDays || '—'} días`;
 
-  return (
-    <View style={styles.container}>
-      <TopAppBar title="Nuevo medicamento" variant="small" onBack={() => router.back()} />
-      <PatientBanner />
-
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.flex}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* ─── Foto ─── */}
-          <Pressable
+  // ─── Paso 0: la foto ───
+  const renderFoto = () => (
+    <>
+      <Pressable
             accessibilityRole="button"
             accessibilityLabel={imageUri ? 'Cambiar la foto del medicamento' : 'Agregar una foto del medicamento'}
             onPress={showImageOptions}
@@ -448,12 +527,12 @@ export default function AddMedicationScreen() {
               )}
             </Surface>
           </Pressable>
+    </>
+  );
 
-          {/* ─── Grupo 1: qué es ─── */}
-          <Text variant="labelMedium" tone="variant" style={styles.groupLabel}>
-            QUÉ MEDICAMENTO ES
-          </Text>
-          <Surface level={1} padded style={styles.group}>
+  // ─── Paso 1: nombre y dosis ───
+  const renderQue = () => (
+    <Surface level={1} padded style={styles.group}>
             <TextField
               label="Nombre"
               placeholder="Metformina"
@@ -478,14 +557,12 @@ export default function AddMedicationScreen() {
               error={errors.dose}
               style={styles.fieldGap}
             />
-          </Surface>
+    </Surface>
+  );
 
-          {/* ─── Grupo 2: cuándo suena ─── */}
-          <Text variant="labelMedium" tone="variant" style={styles.groupLabel}>
-            CUÁNDO SUENA
-          </Text>
-          <Surface level={1} padded style={styles.group}>
-            <Text variant="titleSmall">¿Cada cuántas horas?</Text>
+  // ─── Paso 2: cada cuántas horas ───
+  const renderCada = () => (
+    <Surface level={1} padded style={styles.group}>
             <View style={styles.chipRow}>
               {FREQUENCY_OPTIONS.map((opt) => (
                 <Chip
@@ -516,10 +593,12 @@ export default function AddMedicationScreen() {
                 {errors.frequency}
               </Text>
             )}
+    </Surface>
+  );
 
-            <View style={styles.divider} />
-
-            <Text variant="titleSmall">¿A qué hora empieza?</Text>
+  // ─── Paso 3: a qué hora empieza ───
+  const renderHora = () => (
+    <Surface level={1} padded style={styles.group}>
             <View style={styles.timeGrid}>
               {TIME_OPTIONS.map((opt) => {
                 const active = opt.value === 'custom' ? isCustomTime : startTime === opt.value;
@@ -577,12 +656,15 @@ export default function AddMedicationScreen() {
                 </Text>
               </View>
             </View>
+    </Surface>
+  );
 
-            <View style={styles.divider} />
-
+  // ─── Paso 4: qué días ───
+  const renderDias = () => (
+    <Surface level={1} padded style={styles.group}>
             <View style={styles.daysHeader}>
               <Text variant="titleSmall" style={styles.flex}>
-                ¿Qué días?
+                Días de la semana
               </Text>
               <Button
                 title={selectedDays.length === 7 ? 'Quitar todos' : 'Todos'}
@@ -608,14 +690,12 @@ export default function AddMedicationScreen() {
                 {errors.days}
               </Text>
             )}
-          </Surface>
+    </Surface>
+  );
 
-          {/* ─── Grupo 3: por cuánto tiempo ─── */}
-          <Text variant="labelMedium" tone="variant" style={styles.groupLabel}>
-            POR CUÁNTO TIEMPO
-          </Text>
-          <Surface level={1} padded style={styles.group}>
-            <Text variant="titleSmall">¿Lo vas a tomar para siempre o por unos días?</Text>
+  // ─── Paso 5: por cuánto tiempo ───
+  const renderCuanto = () => (
+    <Surface level={1} padded style={styles.group}>
             <View style={styles.chipRow}>
               <Chip
                 label="Para siempre"
@@ -644,7 +724,97 @@ export default function AddMedicationScreen() {
                 style={styles.fieldGap}
               />
             )}
-          </Surface>
+    </Surface>
+  );
+
+  // ─── Paso 6: resumen ───
+  // Sustituye al diálogo de confirmación: los mismos datos, pero en una
+  // pantalla que hay que recorrer, no un modal que se cierra sin leer.
+  const renderResumen = () => {
+    const filas = [
+      { icono: 'medical-outline' as const, etiqueta: 'Medicina', valor: `${name.trim() || '—'} · ${doseMg || '—'} mg`, paso: 1 },
+      { icono: 'repeat-outline' as const, etiqueta: 'Cada', valor: `${finalFrequencyLabel || '—'} horas`, paso: 2 },
+      { icono: 'alarm-outline' as const, etiqueta: 'Primera toma', valor: formatTime12h(startTime), paso: 3 },
+      { icono: 'calendar-outline' as const, etiqueta: 'Días', valor: daysLabel || '—', paso: 4 },
+      { icono: 'hourglass-outline' as const, etiqueta: 'Duración', valor: durationLabel, paso: 5 },
+    ];
+    return (
+      <Surface level={1} padded style={styles.group}>
+        {filas.map((f, i) => (
+          <Pressable
+            key={f.etiqueta}
+            accessibilityRole="button"
+            accessibilityLabel={`${f.etiqueta}: ${f.valor}. Tocar para cambiar.`}
+            onPress={() => setStep(f.paso)}
+            style={({ pressed }) => [
+              styles.resumenFila,
+              i > 0 && { borderTopWidth: 1, borderTopColor: scheme.outlineVariant },
+              pressed && styles.pressed,
+            ]}
+          >
+            <Ionicons name={f.icono} size={26} color={scheme.primary} />
+            <View style={styles.flex}>
+              <Text variant="labelMedium" tone="variant">
+                {f.etiqueta}
+              </Text>
+              <Text variant="titleSmall">{f.valor}</Text>
+            </View>
+            <Ionicons name="create-outline" size={22} color={scheme.onSurfaceVariant} />
+          </Pressable>
+        ))}
+      </Surface>
+    );
+  };
+
+  const CUERPOS = [renderFoto, renderQue, renderCada, renderHora, renderDias, renderCuanto, renderResumen];
+  const paso = STEPS[step];
+
+  return (
+    <View style={styles.container}>
+      <TopAppBar title="Nuevo medicamento" variant="small" onBack={goBack} />
+      <PatientBanner />
+
+      {/* Progreso: cuántos pasos faltan, dicho con número y con barra. */}
+      <View style={styles.progress}>
+        <Text variant="labelMedium" tone="variant">
+          Paso {step + 1} de {STEPS.length}
+        </Text>
+        <View
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityValue={{ min: 1, max: STEPS.length, now: step + 1 }}
+          style={[styles.track, { backgroundColor: scheme.surfaceVariant }]}
+        >
+          <View
+            style={[
+              styles.trackFill,
+              { width: `${((step + 1) / STEPS.length) * 100}%`, backgroundColor: scheme.primary },
+            ]}
+          />
+        </View>
+      </View>
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.flex}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Don Memo hace la pregunta; el control de abajo la contesta. */}
+          <View style={styles.memoRow}>
+            <DonMemo size={52} variant="head" gesture="nod" gestureKey={step} />
+            <View style={styles.flex}>
+              <Text variant="headlineSmall">{paso.pregunta}</Text>
+              <Text variant="bodyMedium" tone="variant" style={styles.memoLine}>
+                {paso.memo}
+              </Text>
+            </View>
+          </View>
+
+          {CUERPOS[step]()}
 
           {/* ─── Selector de hora: nativo en Android/iOS, propio en web ─── */}
           {showTimePicker && Platform.OS !== 'web' && (
@@ -669,8 +839,9 @@ export default function AddMedicationScreen() {
           )}
         </ScrollView>
 
-        {/* Barra de acción fija: el botón de guardar nunca queda enterrado al
-            final de un scroll largo. */}
+        {/* Barra de acción fija: el avance nunca queda enterrado al final de
+            un scroll. Un solo `filled` por pantalla; "Atrás" es de texto
+            porque retroceder no es lo que la persona vino a hacer. */}
         <View
           style={[
             styles.actionBar,
@@ -682,13 +853,31 @@ export default function AddMedicationScreen() {
             elevation(2, scheme),
           ]}
         >
-          <Button
-            title="Guardar medicamento"
-            icon="checkmark-circle"
-            emphasis
-            loading={saving}
-            onPress={confirmAndSave}
-          />
+          {step === LAST_STEP ? (
+            <Button
+              title="Guardar medicamento"
+              icon="checkmark-circle"
+              emphasis
+              loading={saving}
+              onPress={handleFinish}
+            />
+          ) : (
+            <Button
+              // En el paso de la foto el botón dice en voz alta que es
+              // opcional, en vez de esconder el salto en un enlace chiquito.
+              title={
+                paso.key === 'foto' && !imageUri
+                  ? 'Continuar sin foto'
+                  : 'Siguiente'
+              }
+              icon="arrow-forward"
+              emphasis
+              onPress={goNext}
+            />
+          )}
+          {step > 0 && (
+            <Button title="Atrás" variant="text" onPress={goBack} style={styles.backButton} />
+          )}
         </View>
       </KeyboardAvoidingView>
     </View>
@@ -710,6 +899,40 @@ const makeStyles = (t: ColorScheme) =>
     },
     pressed: {
       opacity: 0.85,
+    },
+    // ─── Asistente paso a paso ───
+    progress: {
+      paddingHorizontal: SCREEN_MARGIN,
+      paddingBottom: SPACING.md,
+      gap: SPACING.sm,
+    },
+    track: {
+      height: 6,
+      borderRadius: SHAPE.full,
+      overflow: 'hidden',
+    },
+    trackFill: {
+      height: '100%',
+      borderRadius: SHAPE.full,
+    },
+    memoRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: SPACING.md,
+      marginBottom: SPACING.xl,
+    },
+    memoLine: {
+      marginTop: SPACING.xs,
+    },
+    resumenFila: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.md,
+      minHeight: TOUCH.min,
+      paddingVertical: SPACING.sm,
+    },
+    backButton: {
+      marginTop: SPACING.xs,
     },
     // ─── Foto ───
     photoCard: {
@@ -735,10 +958,6 @@ const makeStyles = (t: ColorScheme) =>
       flex: 1,
     },
     // ─── Grupos ───
-    groupLabel: {
-      marginTop: SPACING.xxl,
-      marginBottom: SPACING.md,
-    },
     group: {
       marginBottom: SPACING.xs,
     },
@@ -747,11 +966,6 @@ const makeStyles = (t: ColorScheme) =>
     },
     fieldGap: {
       marginTop: SPACING.xl,
-    },
-    divider: {
-      height: 1,
-      backgroundColor: t.outlineVariant,
-      marginVertical: SPACING.xl,
     },
     // ─── Chips ───
     chipRow: {
