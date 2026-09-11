@@ -1,11 +1,11 @@
-# Ficha de Google Play — PastilleroApp
+# Ficha de Google Play — TeRecuerda
 
 Textos y assets listos para pegar en Play Console → Presencia en la tienda → Ficha principal.
 
 ## Título de la app (máx. 30 caracteres)
 
 ```
-PastilleroApp
+TeRecuerda
 ```
 
 ## Descripción corta (máx. 80 caracteres)
@@ -18,12 +18,12 @@ Recordatorio de medicinas con alarma real. Fácil para mayores y su familia.
 ## Descripción larga (máx. 4000 caracteres)
 
 ```
-PastilleroApp es la forma más sencilla de no olvidar ninguna toma de
+TeRecuerda es la forma más sencilla de no olvidar ninguna toma de
 medicamento. Pensada desde cero para adultos mayores y para los familiares
 que los cuidan.
 
 🔔 Una alarma que suena de verdad
-A diferencia de otras apps, PastilleroApp usa la alarma real de tu teléfono.
+A diferencia de otras apps, TeRecuerda usa la alarma real de tu teléfono.
 Suena aunque la aplicación esté cerrada o el teléfono se haya reiniciado, con
 sonido fuerte y vibración, hasta que confirmes que tomaste tu medicina. Si no
 la confirmas, te lo vuelve a recordar.
