@@ -702,9 +702,6 @@ export default function HomeScreen() {
         />
       )}
 
-      {renderUrgentHero()}
-      {renderOtherPending()}
-
       {/* Pendiente persistente: alarma vieja del Reloj sin borrar */}
       {pendingAlarmCleanup.length > 0 && (
         <Pressable
@@ -737,9 +734,13 @@ export default function HomeScreen() {
     </View>
   );
 
-  // ─── Pie de lista: alta de medicamento ───
+  // ─── Pie de lista: alta de medicamento + lo que toca ahora ───
   // La acción de "agregar" es una sola en toda la app y vive aquí, como tarjeta
   // punteada de invitación, en vez de un FAB flotante.
+  //
+  // Debajo va el bloque de "ahora". Antes abría la pantalla; ahora la cierra,
+  // por decisión explícita del cliente: quiere ver primero SU lista de
+  // medicamentos y dejar la confirmación al final.
   const renderFooter = () => {
     if (medications.length === 0) return null;
     return (
@@ -765,6 +766,11 @@ export default function HomeScreen() {
             Agregar medicamento
           </Text>
         </Pressable>
+
+        <View style={styles.nowBlock}>
+          {renderUrgentHero()}
+          {renderOtherPending()}
+        </View>
       </View>
     );
   };
@@ -958,6 +964,12 @@ const makeStyles = (t: ColorScheme) =>
     // ─── Pie de lista: alta ───
     footerBlock: {
       marginTop: SPACING.lg,
+      gap: SPACING.md,
+    },
+    // Aire extra antes del bloque de "ahora": pegado a la tarjeta punteada de
+    // "agregar" se leerían como un mismo grupo, y no lo son.
+    nowBlock: {
+      marginTop: SPACING.xl,
       gap: SPACING.md,
     },
     addCard: {
