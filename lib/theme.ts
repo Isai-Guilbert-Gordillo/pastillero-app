@@ -19,26 +19,31 @@ import { Platform, TextStyle, ViewStyle } from 'react-native';
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. Rampas tonales
 // ═══════════════════════════════════════════════════════════════════════════
-// Un solo tono semilla —el teal #0D9488 declarado como compromiso de marca en
-// PRODUCT.md— extendido a una rampa completa. El rol `primary` del esquema
-// claro NO es el tono de marca sino dos pasos más oscuro (T40), porque texto
-// blanco sobre #0D9488 da 3.75:1 (solo pasa como texto grande) y sobre #0F766E
-// da 5.5:1 (pasa a cualquier tamaño). El tono de marca sigue vivo: es el campo
-// de la alarma y, en su versión clara, el `primary` del esquema oscuro.
+// "Pino Clínico" — retonado en sep. 2026 (ver DESIGN.md, sección Colores).
+// El teal original (#0D9488, familia Tailwind) tenía demasiada croma en sus
+// tonos altos: T80 #5EEAD4 es un cian casi neón, y en modo oscuro —fondo casi
+// negro + ese cian como `primary`— leía como pantalla de terminal futurista,
+// no como una app de salud para 80+. Esta rampa baja la croma en cada paso
+// manteniendo las MISMAS relaciones de luminancia (ningún contraste ya
+// verificado se pierde), para leer "consultorio/farmacia de confianza" en vez
+// de "neón sobre negro". El rol `primary` del esquema claro sigue siendo dos
+// pasos más oscuro que el tono de marca (T40, no T50) por la misma razón de
+// contraste de siempre: blanco sobre T50 no pasa a cualquier tamaño, sobre
+// T40 sí.
 
 const teal = {
   t0: '#000000',
-  t10: '#00201C',
-  t20: '#003731',
-  t30: '#005048',
-  t40: '#0F766E',
-  t50: '#0D9488', // ← tono de marca declarado
-  t60: '#14B8A6',
-  t70: '#2DD4BF',
-  t80: '#5EEAD4',
-  t90: '#99F6E4',
-  t95: '#CCFBF1',
-  t98: '#ECFDF9',
+  t10: '#0B211D',
+  t20: '#14372F',
+  t30: '#1E5045',
+  t40: '#286B5C',
+  t50: '#347F6E', // ← tono de marca declarado
+  t60: '#4A9684',
+  t70: '#64AC9A',
+  t80: '#86C4B3',
+  t90: '#BBE0D3',
+  t95: '#DCEFE8',
+  t98: '#EFF6F3',
   t100: '#FFFFFF',
 } as const;
 
@@ -171,36 +176,39 @@ export const lightScheme: ColorScheme = {
   successContainer: '#D1FAE5',
   onSuccessContainer: '#022C22',
 
-  background: '#EEF2F6',
+  background: '#F5F4EF',
   onBackground: '#0F172A',
   surface: '#FFFFFF',
   onSurface: '#0F172A',
-  surfaceContainer: '#F6F8FA',
-  surfaceVariant: '#E2E8F0',
+  surfaceContainer: '#F7F6F1',
+  surfaceVariant: '#E4E2DA',
   onSurfaceVariant: '#475569',
   onSurfaceMuted: '#64748B',
 
   outline: '#7C8BA1',
   outlineVariant: '#CBD5E1',
 
-  scrim: 'rgba(3, 12, 14, 0.4)',
-  inverseSurface: '#1E2B2E',
-  onInverseSurface: '#EFF3F5',
+  scrim: 'rgba(11, 33, 29, 0.4)',
+  inverseSurface: '#1E2B27',
+  onInverseSurface: '#EFF3F0',
   inversePrimary: teal.t80,
 
-  shadow: '#0B1416',
+  shadow: '#11201D',
 };
 
 // El esquema oscuro no es una inversión. Se diseñó para la escena real: una
 // alarma a las 3 AM en la cara de una persona de 80 años. Los fondos son
 // tealados y muy oscuros (no negro puro, que produce halo en OLED), los tonos
 // primarios suben a T80 y el contraste de texto se mantiene por encima de 9:1.
+// T80 aquí es la versión desaturada de la rampa (ver sección 1): sigue siendo
+// legible de lejos sin leer como un cian que brilla — un teal atenuado, no un
+// tubo de neón.
 export const darkScheme: ColorScheme = {
   dark: true,
 
   primary: teal.t80,
-  onPrimary: '#00382F',
-  primaryContainer: '#00554C',
+  onPrimary: teal.t10,
+  primaryContainer: teal.t30,
   onPrimaryContainer: teal.t90,
   brand: teal.t60,
 
@@ -229,21 +237,21 @@ export const darkScheme: ColorScheme = {
   successContainer: '#065F46',
   onSuccessContainer: '#D1FAE5',
 
-  background: '#0B1416',
-  onBackground: '#E6EDEF',
-  surface: '#121D20',
-  onSurface: '#E6EDEF',
-  surfaceContainer: '#172427',
-  surfaceVariant: '#1F2E31',
-  onSurfaceVariant: '#B3C1C4',
-  onSurfaceMuted: '#8CA0A3',
+  background: '#111C18',
+  onBackground: '#E7EEE9',
+  surface: '#182420',
+  onSurface: '#E7EEE9',
+  surfaceContainer: '#1E2B26',
+  surfaceVariant: '#28362F',
+  onSurfaceVariant: '#B4C2BB',
+  onSurfaceMuted: '#8A9C93',
 
-  outline: '#7E9295',
-  outlineVariant: '#334144',
+  outline: '#7C9089',
+  outlineVariant: '#324039',
 
   scrim: 'rgba(0, 0, 0, 0.6)',
-  inverseSurface: '#E6EDEF',
-  onInverseSurface: '#121D20',
+  inverseSurface: '#E7EEE9',
+  onInverseSurface: '#182420',
   inversePrimary: teal.t40,
 
   shadow: '#000000',

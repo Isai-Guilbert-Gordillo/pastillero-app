@@ -21,8 +21,12 @@ import { SHAPE, SPACING, STATE_LAYER, withAlpha } from '@/lib/theme';
 //   2. Cláusula "tal cual" (as-is): la alarma depende del teléfono y puede no
 //      sonar; no debe ser el único medio para una dosis crítica.
 //
-// Rol de color: `warningContainer` (ámbar). No es un error —por eso no es rojo—
-// pero sí algo que hay que leer, y el ámbar es el tono de "atención" del sistema.
+// Rol de color: `surfaceContainer` con acento `primaryContainer` en el ícono —
+// NO `warningContainer`. Esto es información esperable y permanente, no una
+// alerta puntual; usar el ámbar aquí lo gastaba como decoración y le restaba
+// peso a la única vez que de verdad importa: el semáforo de una dosis (ver "La
+// Regla del Semáforo Honesto" en DESIGN.md). Un escudo legal que se lee como
+// advertencia agresiva genera desconfianza, no protección.
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface MedicalDisclaimerProps {
@@ -39,25 +43,27 @@ export default function MedicalDisclaimer({ compact = false, onReadTerms, style 
   return (
     <View
       accessibilityRole="summary"
-      style={[styles.card, { backgroundColor: scheme.warningContainer }, style]}
+      style={[styles.card, { backgroundColor: scheme.surfaceContainer }, style]}
     >
       <View style={styles.header}>
-        <Ionicons name="shield-checkmark" size={26} color={scheme.onWarningContainer} />
-        <Text variant="titleSmall" tone="onWarningContainer" style={styles.title}>
+        <View style={[styles.iconBadge, { backgroundColor: scheme.primaryContainer }]}>
+          <Ionicons name="shield-checkmark" size={20} color={scheme.onPrimaryContainer} />
+        </View>
+        <Text variant="titleSmall" style={styles.title}>
           Aviso importante
         </Text>
       </View>
 
-      <Text variant="bodySmall" tone="onWarningContainer" style={styles.body}>
-        PastilleroApp es <Text variant="labelMedium" tone="onWarningContainer">solo una ayuda para recordar</Text> tus
+      <Text variant="bodySmall" tone="variant" style={styles.body}>
+        TeRecuerda es <Text variant="labelMedium">solo una ayuda para recordar</Text> tus
         medicinas. No es un aparato médico ni sustituye a tu doctor. Tú eres el responsable de tomar tus
         medicamentos y de consultar cualquier duda con un profesional de la salud.
       </Text>
 
       {!compact && (
-        <Text variant="bodySmall" tone="onWarningContainer" style={styles.body}>
+        <Text variant="bodySmall" tone="variant" style={styles.body}>
           Las alarmas dependen de tu teléfono: si se apaga, se queda sin batería o el sistema cierra la
-          app, es posible que <Text variant="labelMedium" tone="onWarningContainer">no suene</Text>. La app
+          app, es posible que <Text variant="labelMedium">no suene</Text>. La app
           se ofrece &quot;tal cual&quot;, sin garantía de que funcione siempre. No la uses como único medio
           para una medicina que no puede fallar.
         </Text>
@@ -70,13 +76,13 @@ export default function MedicalDisclaimer({ compact = false, onReadTerms, style 
           onPress={onReadTerms}
           style={({ pressed }) => [
             styles.link,
-            pressed && { backgroundColor: withAlpha(scheme.onWarningContainer, STATE_LAYER.pressed) },
+            pressed && { backgroundColor: withAlpha(scheme.primary, STATE_LAYER.pressed) },
           ]}
         >
-          <Text variant="labelMedium" tone="onWarningContainer" style={styles.linkText}>
+          <Text variant="labelMedium" tone="primary" style={styles.linkText}>
             Leer los términos completos
           </Text>
-          <Ionicons name="open-outline" size={18} color={scheme.onWarningContainer} />
+          <Ionicons name="open-outline" size={18} color={scheme.primary} />
         </Pressable>
       )}
     </View>
@@ -91,8 +97,15 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
+    gap: SPACING.md,
     marginBottom: SPACING.sm,
+  },
+  iconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: SHAPE.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
     flex: 1,

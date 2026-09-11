@@ -45,7 +45,7 @@ import Animated, {
 //   · Un campo rojo saturado en la cara a las 3 AM es agresivo con una persona
 //     de 80 años recién despertada. La urgencia ya la ponen el sonido en bucle,
 //     la vibración y la escala del tipo — no hace falta gritarle con el color.
-//   · Es el único lugar de la app donde el tono de marca (#0D9488) ocupa la
+//   · Es el único lugar de la app donde el tono de marca (#347F6E) ocupa la
 //     pantalla completa. Al abrir los ojos, se reconoce de qué app es antes de
 //     leer una sola palabra.
 //
@@ -54,8 +54,8 @@ import Animated, {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Campo de la alarma. Dos paradas del mismo tono — profundidad, no efecto. */
-const FIELD_LIGHT = ['#14B8A6', '#0F766E', '#065F58'] as const;
-const FIELD_DARK = ['#0B3B36', '#062A26', '#01201C'] as const;
+const FIELD_LIGHT = ['#4A9684', '#286B5C', '#14372F'] as const;
+const FIELD_DARK = ['#0D2E26', '#082019', '#020F0A'] as const;
 
 export default function AlarmScreen() {
   const router = useRouter();
@@ -66,10 +66,10 @@ export default function AlarmScreen() {
 
   // Sobre el campo de marca los colores no vienen de roles de superficie: es una
   // superficie propia, con su propio par contenido/contenedor.
-  const onField = scheme.dark ? '#CCFBF1' : '#FFFFFF';
-  const onFieldMuted = scheme.dark ? 'rgba(204,251,241,0.72)' : 'rgba(255,255,255,0.78)';
-  const actionSurface = scheme.dark ? '#CCFBF1' : '#FFFFFF';
-  const onActionSurface = scheme.dark ? '#00201C' : '#0F766E';
+  const onField = scheme.dark ? '#DCEFE8' : '#FFFFFF';
+  const onFieldMuted = scheme.dark ? 'rgba(220,239,232,0.72)' : 'rgba(255,255,255,0.78)';
+  const actionSurface = scheme.dark ? '#DCEFE8' : '#FFFFFF';
+  const onActionSurface = scheme.dark ? '#0B211D' : '#286B5C';
 
   // ─── Cola compartida de alarmas (lib/alarmQueue.ts) ───
   // Esta pantalla SIEMPRE muestra el primer item de la cola. Si llega un

@@ -1,12 +1,12 @@
 ---
-name: PastilleroApp
-description: Material 3 templado para manos que tiemblan — el teal de la marca convertido en un sistema tonal completo, claro y oscuro.
+name: TeRecuerda
+description: Material 3 templado para manos que tiemblan — "Pino Clínico", un teal de baja croma convertido en sistema tonal completo, claro y oscuro.
 colors:
-  primary: "#0F766E"
+  primary: "#286B5C"
   on-primary: "#FFFFFF"
-  primary-container: "#99F6E4"
-  on-primary-container: "#00201C"
-  brand-teal: "#0D9488"
+  primary-container: "#BBE0D3"
+  on-primary-container: "#0B211D"
+  brand-teal: "#347F6E"
   secondary: "#4338CA"
   on-secondary: "#FFFFFF"
   secondary-container: "#E0E7FF"
@@ -25,28 +25,28 @@ colors:
   success: "#047857"
   success-container: "#D1FAE5"
   on-success-container: "#022C22"
-  background: "#EEF2F6"
+  background: "#F5F4EF"
   surface: "#FFFFFF"
-  surface-container: "#F6F8FA"
-  surface-variant: "#E2E8F0"
+  surface-container: "#F7F6F1"
+  surface-variant: "#E4E2DA"
   on-surface: "#0F172A"
   on-surface-variant: "#475569"
   on-surface-muted: "#64748B"
   outline: "#7C8BA1"
   outline-variant: "#CBD5E1"
-  dark-background: "#0B1416"
-  dark-surface: "#121D20"
-  dark-surface-variant: "#1F2E31"
-  dark-surface-container: "#172427"
-  dark-on-surface: "#E6EDEF"
-  dark-on-surface-variant: "#B3C1C4"
-  dark-on-surface-muted: "#8CA0A3"
-  dark-outline: "#7E9295"
-  dark-outline-variant: "#334144"
-  dark-primary: "#5EEAD4"
-  dark-on-primary: "#00382F"
-  dark-primary-container: "#00554C"
-  dark-on-primary-container: "#99F6E4"
+  dark-background: "#111C18"
+  dark-surface: "#182420"
+  dark-surface-variant: "#28362F"
+  dark-surface-container: "#1E2B26"
+  dark-on-surface: "#E7EEE9"
+  dark-on-surface-variant: "#B4C2BB"
+  dark-on-surface-muted: "#8A9C93"
+  dark-outline: "#7C9089"
+  dark-outline-variant: "#324039"
+  dark-primary: "#86C4B3"
+  dark-on-primary: "#0B211D"
+  dark-primary-container: "#1E5045"
+  dark-on-primary-container: "#BBE0D3"
 typography:
   display:
     fontFamily: "Poppins_800ExtraBold"
@@ -152,7 +152,7 @@ components:
     size: "64dp 40dp"
 ---
 
-# Design System: PastilleroApp
+# Design System: TeRecuerda
 
 ## Overview
 
@@ -166,9 +166,11 @@ La densidad es deliberadamente baja. Donde una app de productividad mete seis ac
 
 Anti-referencia confirmada, tomada del código anterior: **la pila infinita de tarjetas blancas idénticas sobre gris con sombra suave**, cada pantalla coronada por el mismo encabezado de degradado teal con emoji. Todo se veía igual de importante, así que nada lo era.
 
+**Segunda anti-referencia (sep. 2026), tomada del mismo código ya publicado:** el teal original era Tailwind `teal` sin editar — en modo oscuro, T80 `#5EEAD4` (un cian casi neón) sobre un fondo casi negro. Técnicamente correcto por rol y por contraste, pero el resultado leía "terminal futurista / Tron", no "farmacia de confianza para mi papá". La rampa se retonó completa a **"Pino Clínico"**: mismas relaciones de luminancia y contraste, croma más baja en cada paso. El ícono de la app (un asterisco genérico en cuadrado redondeado, el tipo de marca que cualquier generador de íconos produce) se reemplazó por un glifo propio: el compartimento del pastillero con su pastilla dentro, el mismo objeto que ya era el norte creativo del sistema. Ver *Ícono de marca* al final de esta sección.
+
 **Key Characteristics:**
 - Material 3 nativo: nada de controles inventados ni portados de iOS.
-- Esquema tonal completo desde un solo tono teal, claro y oscuro de primera clase.
+- Esquema tonal completo desde un solo tono teal de baja croma ("Pino Clínico"), claro y oscuro de primera clase.
 - Piso tipográfico de 16sp, cuerpo de 19sp, todo escalable con el ajuste del sistema.
 - Objetivo táctil mínimo de 64×64dp (por encima de los 48dp de Material) con 8dp de separación.
 - Un FAB, una acción principal por pantalla.
@@ -192,7 +194,7 @@ Un solo tono —el teal de la marca— extendido a una rampa tonal completa, con
 - **Rosa de Medicina** (`{colors.tertiary}`): el calor humano del sistema. Identifica al medicamento como objeto (el ícono de la píldora, el encabezado de las secciones del formulario). Nunca es un estado.
 
 ### Neutral
-- **Gris Sala de Espera** (`{colors.background}`): el suelo de la app. Un slate frío y clarísimo que hace que las superficies blancas floten sin necesidad de sombra.
+- **Papel de Consultorio** (`{colors.background}`): el suelo de la app. Un cálido casi-blanco (no un slate frío de dashboard) que hace que las superficies floten sin necesidad de sombra y sin leer "SaaS".
 - **Blanco Compartimento** (`{colors.surface}`): las tarjetas, hojas y diálogos. El "compartimento" del pastillero.
 - **Tinta** (`{colors.on-surface}`): el texto. Slate-900, no negro puro — 17:1 contra blanco.
 - **Tinta Suave** (`{colors.on-surface-variant}`): el texto secundario, a 7.6:1. El slate-500 del sistema anterior (4.7:1) queda solo para placeholders.
@@ -200,11 +202,15 @@ Un solo tono —el teal de la marca— extendido a una rampa tonal completa, con
 
 ### Named Rules
 
-**La Regla del Semáforo Honesto.** Verde (`{colors.success}`), ámbar (`{colors.warning}`) y rojo (`{colors.error}`) solo describen el estado de una dosis o de una operación: tomada, pendiente, no tomada, fallida. Un ámbar decorativo destruye la única señal que esta app no puede permitirse perder.
+**La Regla del Semáforo Honesto.** Verde (`{colors.success}`), ámbar (`{colors.warning}`) y rojo (`{colors.error}`) solo describen el estado de una dosis o de una operación: tomada, pendiente, no tomada, fallida. Un ámbar decorativo destruye la única señal que esta app no puede permitirse perder. **Caso corregido (sep. 2026):** el descargo médico (`components/MedicalDisclaimer.tsx`) usaba `warningContainer` para un aviso legal permanente, no un estado de dosis — se leía como una alerta agresiva ("algo salió mal") en vez de información esperable. Ahora usa `surfaceContainer` con acento `primaryContainer`, la misma familia visual que cualquier bloque informativo del sistema.
 
 **La Regla del Rojo Reservado.** El rojo nunca decora urgencia. La alarma no es un error; es la app funcionando. La urgencia se transmite con escala, movimiento, sonido y vibración, no con un degradado rojo en la cara a las 3 AM.
 
 **La Regla del Rol, no del Hex.** Ningún componente escribe un hexadecimal. Todo pasa por un rol del esquema activo, porque un hex no sabe resolverse en modo oscuro.
+
+### Ícono de marca
+
+El ícono anterior era un asterisco blanco en un cuadrado redondeado de marca — genérico, intercambiable con cualquier app de salud generada por IA, sin relación con el mecanismo real del producto. El ícono actual dibuja el propio norte creativo del sistema: **un compartimento del pastillero (cuadrado de esquina generosa) con su pastilla dentro** (un círculo, ligeramente hacia abajo-derecha del centro) y una costura fina cerca del borde superior que sugiere la tapa. Fondo de campo completo en `{colors.brand-teal}`, glifo en un tono claro de la rampa, pastilla en el tono más oscuro — dos colores, plano, sin degradados ni bisel. Assets en `assets/images/`: `icon.png` y `playstore-icon-512.png` (con fondo), `android-icon-foreground.png` y `splash-icon.png` (glifo transparente, inset a zona segura), `notification-icon.png` (silueta blanca pura, requisito de Android).
 
 ## Typography
 
