@@ -1,3 +1,4 @@
+import BrandMark from '@/components/BrandMark';
 import DonMemo, { MemoGesture } from '@/components/DonMemo';
 import { useFeedback } from '@/components/Feedback';
 import MedicationPhoto from '@/components/MedicationPhoto';
@@ -28,6 +29,7 @@ import {
     SHAPE,
     SPACING,
     TOUCH,
+    withAlpha,
 } from '@/lib/theme';
 import { Medication } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
@@ -503,7 +505,14 @@ export default function HomeScreen() {
               style={styles.medImage}
               fallback={
                 <View style={styles.medImagePlaceholder}>
-                  <Ionicons name="medical" size={34} color={scheme.tertiary} />
+                  {/* Compartimento tenue + pastilla sólida: así el punto focal
+                      es la pastilla y no un cuadro oscuro, y funciona igual en
+                      claro y en oscuro. */}
+                  <BrandMark
+                    size={38}
+                    boxColor={withAlpha(scheme.onTertiaryContainer, 0.2)}
+                    pillColor={scheme.onTertiaryContainer}
+                  />
                 </View>
               }
             />
@@ -571,12 +580,13 @@ export default function HomeScreen() {
           borderColor={isNow ? scheme.warning : scheme.outlineVariant}
           style={styles.hero}
         >
-          {/* Eco del arte lineal del prototipo: una cápsula tenue integrada a la
-              textura de la tarjeta, sin robar contraste al contenido. */}
-          <Ionicons
-            name="medical"
-            size={120}
-            color={scheme.primary}
+          {/* Marca de agua: el propio glifo del pastillero, no un ícono suelto
+              de librería. Tenue, integrado a la textura de la tarjeta, sin
+              robarle contraste al contenido. */}
+          <BrandMark
+            size={130}
+            boxColor={scheme.primary}
+            pillColor={scheme.primary}
             style={styles.heroArt}
           />
           <Animated.View

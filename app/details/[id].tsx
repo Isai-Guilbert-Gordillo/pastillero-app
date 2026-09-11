@@ -1,3 +1,4 @@
+import BrandMark from '@/components/BrandMark';
 import { useFeedback } from '@/components/Feedback';
 import MedicationPhoto from '@/components/MedicationPhoto';
 import PatientBanner from '@/components/PatientBanner';
@@ -14,7 +15,7 @@ import { useTheme, useThemedStyles } from '@/context/ThemeContext';
 import { cancelAllMedicationNotifications, scheduleMedicationNotifications, scheduleNativeAlarms } from '@/lib/notifications';
 import { deleteMedicationPhoto, uploadMedicationPhoto } from '@/lib/photos';
 import { supabase } from '@/lib/supabase';
-import { ColorScheme, SCREEN_MARGIN, SHAPE, SPACING, TOUCH, elevation } from '@/lib/theme';
+import { ColorScheme, SCREEN_MARGIN, SHAPE, SPACING, TOUCH, elevation, withAlpha } from '@/lib/theme';
 import { Medication } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -734,7 +735,11 @@ export default function MedicationDetailScreen() {
             style={styles.heroImage}
             fallback={
               <View style={[styles.heroPlaceholder, { backgroundColor: scheme.tertiaryContainer }]}>
-                <Ionicons name="medical" size={48} color={scheme.onTertiaryContainer} />
+                <BrandMark
+                  size={52}
+                  boxColor={withAlpha(scheme.onTertiaryContainer, 0.2)}
+                  pillColor={scheme.onTertiaryContainer}
+                />
               </View>
             }
           />

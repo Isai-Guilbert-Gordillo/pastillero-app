@@ -1,3 +1,4 @@
+import BrandMark from '@/components/BrandMark';
 import { useFeedback } from '@/components/Feedback';
 import MedicalDisclaimer from '@/components/MedicalDisclaimer';
 import Button from '@/components/ui/Button';
@@ -407,14 +408,9 @@ export default function ProfileScreen() {
         <Surface level={1} padded>
           <ListItem
             leading={
-              <IconBadge
-                name="medical"
-                color={scheme.onTertiaryContainer}
-                backgroundColor={scheme.tertiaryContainer}
-                size={48}
-              />
+              <BrandMark size={48} boxColor={scheme.primary} pillColor={scheme.primaryContainer} />
             }
-            headline="PastilleroApp"
+            headline="TeRecuerda"
             supporting="Tu recordatorio de medicamentos · versión 1.0.0"
           />
           <ListDivider />

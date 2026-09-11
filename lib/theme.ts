@@ -47,26 +47,35 @@ const teal = {
   t100: '#FFFFFF',
 } as const;
 
+// Los acompañantes van al MISMO registro de croma que el teal. La primera
+// versión de "Pino Clínico" bajó el primario y dejó estos en su saturación
+// original de Tailwind: el resultado fue que un círculo rosa #BE123C o una
+// píldora ámbar #FEF3C7 saltaban de la pantalla como si fueran errores, justo
+// porque todo lo demás se había calmado. Un acento no destaca por ser más
+// saturado que el resto; destaca por ser de otro tono.
+
 const indigo = {
-  t10: '#16135C',
-  t20: '#262185',
-  t30: '#3730A3',
-  t40: '#4338CA',
-  t50: '#4F46E5',
-  t80: '#C7D2FE',
-  t90: '#E0E7FF',
-  t95: '#EEF2FF',
+  t10: '#1B1A3D',
+  t20: '#2C2A5C',
+  t30: '#3E3B78',
+  t40: '#4E4A91',
+  t50: '#615DA6',
+  t80: '#C2BFDF',
+  t90: '#DEDCEC',
+  t95: '#EEEDF5',
 } as const;
 
+// Rosa de botica: arcilla, no fucsia. Junto al pino apagado forma el par
+// terracota/salvia, que es armónico; el rosa Tailwind al 100% no lo era.
 const rose = {
-  t10: '#4C0519',
-  t20: '#881337',
-  t30: '#9F1239',
-  t40: '#BE123C',
-  t50: '#E11D48',
-  t70: '#FDA4AF',
-  t80: '#FECDD3',
-  t90: '#FFE4E8',
+  t10: '#3D1219',
+  t20: '#6B2530',
+  t30: '#8A3441',
+  t40: '#A04552',
+  t50: '#B85A66',
+  t70: '#DCA8AE',
+  t80: '#E8C8CC',
+  t90: '#F2E0E2',
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -161,20 +170,25 @@ export const lightScheme: ColorScheme = {
   tertiaryContainer: rose.t90,
   onTertiaryContainer: rose.t10,
 
-  error: '#B91C1C',
+  // El semáforo también baja de croma, pero NO de separación: los tres siguen
+  // siendo tres tonos inconfundibles entre sí y contra el pino del primario.
+  // El verde se corre hacia el amarillo a propósito — un verde azulado se
+  // confundiría con el teal de la marca, y "tomada" dejaría de leerse de un
+  // vistazo (ver La Regla del Semáforo Honesto).
+  error: '#A83232',
   onError: '#FFFFFF',
-  errorContainer: '#FEE2E2',
-  onErrorContainer: '#450A0A',
+  errorContainer: '#F7DEDE',
+  onErrorContainer: '#3D0D0D',
 
-  warning: '#92400E',
+  warning: '#8A5A16',
   onWarning: '#FFFFFF',
-  warningContainer: '#FEF3C7',
-  onWarningContainer: '#451A03',
+  warningContainer: '#F5E6C8',
+  onWarningContainer: '#3D2708',
 
-  success: '#047857',
+  success: '#477A3C',
   onSuccess: '#FFFFFF',
-  successContainer: '#D1FAE5',
-  onSuccessContainer: '#022C22',
+  successContainer: '#DCE9D4',
+  onSuccessContainer: '#16280F',
 
   background: '#F5F4EF',
   onBackground: '#0F172A',
@@ -222,20 +236,20 @@ export const darkScheme: ColorScheme = {
   tertiaryContainer: rose.t30,
   onTertiaryContainer: rose.t90,
 
-  error: '#FCA5A5',
-  onError: '#450A0A',
-  errorContainer: '#7F1D1D',
-  onErrorContainer: '#FEE2E2',
+  error: '#E89B9B',
+  onError: '#3D0D0D',
+  errorContainer: '#6E2020',
+  onErrorContainer: '#F7DEDE',
 
-  warning: '#FCD34D',
-  onWarning: '#451A03',
-  warningContainer: '#78350F',
-  onWarningContainer: '#FEF3C7',
+  warning: '#E8C07A',
+  onWarning: '#3D2708',
+  warningContainer: '#5C4218',
+  onWarningContainer: '#F5E6C8',
 
-  success: '#6EE7B7',
-  onSuccess: '#022C22',
-  successContainer: '#065F46',
-  onSuccessContainer: '#D1FAE5',
+  success: '#9CC48E',
+  onSuccess: '#16280F',
+  successContainer: '#3A5C30',
+  onSuccessContainer: '#DCE9D4',
 
   background: '#111C18',
   onBackground: '#E7EEE9',

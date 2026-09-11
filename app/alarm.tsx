@@ -1,3 +1,4 @@
+import BrandMark from '@/components/BrandMark';
 import { useFeedback } from '@/components/Feedback';
 import MedicationPhoto from '@/components/MedicationPhoto';
 import Text from '@/components/ui/Text';
@@ -321,7 +322,13 @@ export default function AlarmScreen() {
             style={styles.photo}
             fallback={
               <View style={[styles.photoPlaceholder, { borderColor: onFieldMuted }]}>
-                <Ionicons name="medical" size={56} color={onField} />
+                {/* Compartimento claro, pastilla del tono del campo — el mismo
+                    contraste del ícono de la app. */}
+                <BrandMark
+                  size={58}
+                  boxColor={onField}
+                  pillColor={scheme.dark ? FIELD_DARK[0] : FIELD_LIGHT[1]}
+                />
               </View>
             }
           />
