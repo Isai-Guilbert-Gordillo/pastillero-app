@@ -1,3 +1,4 @@
+import BrandMark from '@/components/BrandMark';
 import MedicalDisclaimer from '@/components/MedicalDisclaimer';
 import Button from '@/components/ui/Button';
 import Checkbox from '@/components/ui/Checkbox';
@@ -7,7 +8,7 @@ import TextField from '@/components/ui/TextField';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme, useThemedStyles } from '@/context/ThemeContext';
 import { LINKS } from '@/lib/links';
-import { ColorScheme, SCREEN_MARGIN, SHAPE, SPACING, TOUCH } from '@/lib/theme';
+import { ColorScheme, MOTION, SCREEN_MARGIN, SHAPE, SPACING, TOUCH } from '@/lib/theme';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useState } from 'react';
@@ -20,6 +21,7 @@ import {
     View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Entrada a la app.
@@ -64,6 +66,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -346,23 +349,15 @@ export default function LoginScreen() {
           {/* ─── Marca ─── */}
           <View style={styles.brand}>
             <View style={[styles.mark, { backgroundColor: scheme.primaryContainer }]}>
-              <Ionicons name="medical" size={44} color={scheme.onPrimaryContainer} />
+              <BrandMark size={56} />
             </View>
             <Text variant="displaySmall" tone="primary" center style={styles.brandName}>
-              PastilleroApp
+              TeRecuerda
             </Text>
             <Text variant="bodyMedium" tone="variant" center>
               Tu medicina suena a su hora, aunque la app esté cerrada
             </Text>
           </View>
-
-          {/* ─── Descargo médico visible: el escudo, antes de crear la cuenta ─── */}
-          {authView === 'form' && (
-            <MedicalDisclaimer
-              onReadTerms={() => WebBrowser.openBrowserAsync(LINKS.terminos).catch(() => {})}
-              style={styles.disclaimer}
-            />
-          )}
 
           {/* ─── Formulario ─── */}
           <Surface level={1} padded>
@@ -631,6 +626,46 @@ export default function LoginScreen() {
               />
             </View>
           )}
+
+          {/* ─── Descargo médico: disponible, no en el camino ───
+              El texto legal que de verdad autoriza el registro vive en la
+              casilla de consentimiento de arriba (con sus propios enlaces a
+              términos y privacidad); esto es el refuerzo en lenguaje llano.
+              Antes se mostraba siempre abierto encima del formulario —
+              empujaba "Entrar" fuera de la vista en cada inicio de sesión,
+              para alguien que ya lo aceptó una vez. Ahora vive plegado al
+              final: un toque para quien lo quiera leer, cero estorbo para
+              quien solo quiere entrar. */}
+          {authView === 'form' && (
+            <View style={styles.disclaimerSection}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={showDisclaimer ? 'Ocultar el aviso médico y de privacidad' : 'Mostrar el aviso médico y de privacidad'}
+                accessibilityState={{ expanded: showDisclaimer }}
+                onPress={() => setShowDisclaimer((prev) => !prev)}
+                style={({ pressed }) => [styles.disclaimerToggle, pressed && styles.disclaimerTogglePressed]}
+              >
+                <Ionicons name="shield-checkmark-outline" size={18} color={scheme.onSurfaceMuted} />
+                <Text variant="labelMedium" tone="muted" style={styles.disclaimerToggleText}>
+                  Aviso médico y de privacidad
+                </Text>
+                <Ionicons
+                  name={showDisclaimer ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color={scheme.onSurfaceMuted}
+                />
+              </Pressable>
+
+              {showDisclaimer && (
+                <Animated.View entering={FadeInDown.duration(MOTION.duration.medium)} exiting={FadeOut.duration(MOTION.duration.short)}>
+                  <MedicalDisclaimer
+                    onReadTerms={() => WebBrowser.openBrowserAsync(LINKS.terminos).catch(() => {})}
+                    style={styles.disclaimer}
+                  />
+                </Animated.View>
+              )}
+            </View>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -667,9 +702,27 @@ const makeStyles = (t: ColorScheme) =>
     brandName: {
       marginBottom: SPACING.xs,
     },
-    // ─── Descargo médico ───
+    // ─── Descargo médico (plegado, al final) ───
+    disclaimerSection: {
+      marginTop: SPACING.xxl,
+    },
+    disclaimerToggle: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: SPACING.xs,
+      minHeight: TOUCH.min,
+      borderRadius: SHAPE.small,
+      paddingHorizontal: SPACING.sm,
+    },
+    disclaimerTogglePressed: {
+      opacity: 0.6,
+    },
+    disclaimerToggleText: {
+      textDecorationLine: 'underline',
+    },
     disclaimer: {
-      marginBottom: SPACING.lg,
+      marginTop: SPACING.sm,
     },
     // ─── Formulario ───
     formTitle: {
