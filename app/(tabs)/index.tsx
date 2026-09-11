@@ -1,3 +1,4 @@
+import DonMemo, { MemoGesture } from '@/components/DonMemo';
 import { useFeedback } from '@/components/Feedback';
 import MedicationPhoto from '@/components/MedicationPhoto';
 import PatientBanner from '@/components/PatientBanner';
@@ -84,6 +85,12 @@ export default function HomeScreen() {
   const [medications, setMedications] = useState<Medication[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Gesto de Don Memo en el saludo: saluda al abrir, asiente al confirmar una
+  // dosis. `key` sube para poder repetir el mismo gesto dos veces seguidas.
+  const [memo, setMemo] = useState<{ gesture: MemoGesture; key: number }>({
+    gesture: 'greet',
+    key: 0,
+  });
   const [, forceUpdate] = useState(0); // Para refrescar el countdown
   const [takenDoses, setTakenDoses] = useState<Set<string>>(new Set()); // Dosis ya tomadas (ocultar tarjeta urgente)
   const [confirmedDoseKeys, setConfirmedDoseKeys] = useState<Set<string>>(new Set()); // Igual, pero desde Supabase (sobrevive a cerrar la app)
@@ -433,6 +440,10 @@ export default function HomeScreen() {
     const doseKey = `${med.id}_${scheduledDose.toISOString()}`;
     setTakenDoses((prev) => new Set(prev).add(doseKey));
 
+    // Don Memo asiente. Es el acuse de recibo silencioso: el snackbar dice el
+    // dato, él solo confirma que lo vio.
+    setMemo((m) => ({ gesture: 'nod', key: m.key + 1 }));
+
     // Antes esto era un modal con botón "OK": una ventana que hay que cerrar
     // para confirmar algo que ya pasó. Ahora es un snackbar — no interrumpe, no
     // hay nada que decidir, y desaparece solo.
@@ -519,20 +530,18 @@ export default function HomeScreen() {
     );
   };
 
+  // Estado vacío: el único momento de la app donde no hay ningún dato que
+  // mostrar, y por lo tanto el lugar natural de Don Memo. Aquí sí habla en
+  // primera persona — no está diciendo nada médico, está presentándose.
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
-      <IconBadge
-        name="medical-outline"
-        color={scheme.onPrimaryContainer}
-        backgroundColor={scheme.primaryContainer}
-        size={112}
-        iconSize={56}
-      />
+      <DonMemo size={110} gesture="greet" style={styles.emptyMemo} />
       <Text variant="headlineSmall" center style={styles.emptyTitle}>
-        Todavía no hay medicamentos
+        Mucho gusto, soy Don Memo
       </Text>
       <Text variant="bodyLarge" tone="variant" center style={styles.emptyText}>
-        Agrega el primero y PastilleroApp se encargará de que suene a su hora, aunque la app esté cerrada.
+        A mí no se me olvida nada. Dime qué medicina tomas y a qué hora, y yo me
+        encargo de que suene — aunque la app esté cerrada.
       </Text>
       <Button
         title="Agregar mi primer medicamento"
@@ -649,12 +658,11 @@ export default function HomeScreen() {
   // ─── Saludo integrado al contenido (reemplaza la barra superior fija) ───
   const renderGreeting = () => (
     <View style={[styles.greeting, { paddingTop: insets.top + SPACING.sm }]}>
-      <IconBadge
-        name="person"
-        color={scheme.onPrimaryContainer}
-        backgroundColor={scheme.primaryContainer}
-        size={52}
-      />
+      {/* Don Memo vive aquí, en el hueco donde antes había un ícono genérico
+          de "persona". No es adorno flotante: es una ranura fija —la del
+          avatar— y además le da al asentimiento un lugar donde caer cuando
+          confirmas una dosis. */}
+      <DonMemo size={44} variant="head" gesture={memo.gesture} gestureKey={memo.key} />
       <View style={styles.greetingText}>
         <Text variant="headlineSmall" numberOfLines={1}>
           Hola, {userName}
@@ -936,6 +944,9 @@ const makeStyles = (t: ColorScheme) =>
     emptyContainer: {
       alignItems: 'center',
       paddingVertical: SPACING.xxxl,
+    },
+    emptyMemo: {
+      marginBottom: SPACING.xs,
     },
     emptyTitle: {
       marginTop: SPACING.xl,

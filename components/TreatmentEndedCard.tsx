@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import DonMemo from '@/components/DonMemo';
 import Button from '@/components/ui/Button';
-import IconBadge from '@/components/ui/IconBadge';
 import Surface from '@/components/ui/Surface';
 import Text from '@/components/ui/Text';
 import TextField from '@/components/ui/TextField';
@@ -59,12 +59,10 @@ export default function TreatmentEndedCard({
   return (
     <Surface level={1} padded borderColor={scheme.primary} style={styles.card}>
       <View style={styles.header}>
-        <IconBadge
-          name="flag"
-          color={scheme.onPrimaryContainer}
-          backgroundColor={scheme.primaryContainer}
-          size={48}
-        />
+        {/* Cerrar un tratamiento es un momento humano, no un dato más: Don
+            Memo aparece aquí (solo la cabeza, el busto no sobrevive a este
+            tamaño). El conteo y las fechas las sigue diciendo el sistema. */}
+        <DonMemo size={46} variant="head" idle={false} />
         <View style={styles.headerText}>
           <Text variant="titleMedium">Tratamiento terminado</Text>
           <Text variant="bodySmall" tone="variant">

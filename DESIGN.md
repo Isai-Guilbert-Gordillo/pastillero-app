@@ -339,6 +339,20 @@ Lo primero y más grande de Inicio, y la única cosa de la app que ocupa ese lug
 ### Signature Component: La Tarjeta de Medicamento
 El compartimento del pastillero. Ancho completo menos márgenes, foto real del medicamento (o su relleno en `{colors.tertiary-container}`) a 72dp a la izquierda, nombre en Title Medium, `dosis · cada N h` en Body Small, y una línea de "Próxima HH:MM" en `{colors.primary}` con su ícono de alarma. Chevron a la derecha: la tarjeta navega al detalle, no ejecuta una acción.
 
+### Signature Component: Don Memo, el abuelo robot
+
+La mascota (`components/DonMemo.tsx`). **Su cabeza ES el ícono de la app**: el mismo compartimento de esquina generosa, con la misma costura de tapa en la frente. No es una ilustración traída de fuera y pegada sobre el sistema — está hecha de las mismas figuras, así que la marca y el personaje son el mismo objeto a distinta resolución.
+
+Es deliberadamente un **par**, no un cuidador infantil: los lentes redondos y el bigote de manubrio lo ponen en la misma generación que el usuario. La trampa de este género —el osito, la carita sonriente— infantiliza a una persona de 80 años; un abuelo no. Y "robot" no es capricho: es la promesa del producto dicha en forma de personaje, *a él no se le olvida nunca*.
+
+**Dos piezas, no una.** `bust` (busto con hombros caídos, suéter con solapas) para momentos grandes; `head` (solo cabeza) abajo de ~64dp, porque a ese tamaño el suéter se vuelve una mancha. Su paleta se resuelve con `mascot(scheme)` de `lib/theme.ts` — no con los roles de superficie, que se invierten entre claro y oscuro y le cambiarían la cara de color.
+
+**Movimiento:** parpadea cada 3.6 s (con estado, no con props animados de SVG: en web no actualizan el atributo), saluda al montarse y asiente cuando se confirma una dosis. Todo se apaga solo si el sistema pide menos animación — para parte de este público el movimiento involuntario distrae o marea.
+
+**Dónde vive:** estado vacío de Inicio (se presenta), saludo de Inicio (la ranura del avatar, donde el asentimiento tiene dónde caer), guía de permisos, cierre de tratamiento.
+
+**La Regla de Don Memo Callado.** Don Memo NO aparece en la pantalla de alarma, y NO dice nunca un dato médico. Lo primero porque a las 3 AM, frente a alguien recién despertado, un personaje compite con la única información que importa y suaviza una urgencia que debe ser nítida — la urgencia va por escala, sonido y vibración (ver *La Regla del Rojo Reservado*). Lo segundo porque las dosis, las horas y los conteos los dice el sistema en voz neutra: él acompaña, no receta. Un personaje que "te dice" que tomes algo empieza a parecerse a consejo médico, y eso es exactamente lo que el descargo de `docs/terminos.html` promete que la app no hace.
+
 ## Do's and Don'ts
 
 ### Do:
@@ -363,3 +377,5 @@ El compartimento del pastillero. Ancho completo menos márgenes, foto real del m
 - **Don't** dejar el FAB extendido y quieto mientras la lista se desplaza. Ver *La Regla del FAB que Cede el Paso*.
 - **Don't** dejar el FAB como un "+" pelado en reposo. Ver *La Regla del Rótulo en el FAB*.
 - **Don't** dar a un botón `tonal` el índigo de `{colors.secondary-container}`. Ver *La Regla del Índigo Prestado*.
+- **Don't** poner a Don Memo en la pantalla de alarma, ni ponerlo a decir dosis, horas o conteos. Ver *La Regla de Don Memo Callado*.
+- **Don't** resolver los colores de Don Memo con roles de superficie: usa `mascot(scheme)`. `primaryContainer` se invierte entre esquemas y le cambiaría la cara de color en modo oscuro.

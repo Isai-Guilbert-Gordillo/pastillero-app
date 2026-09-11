@@ -451,6 +451,67 @@ export const withAlpha = (color: string, alpha: number): string => {
 // 10. Utilidades
 // ═══════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 10.b Paleta de Don Memo (la mascota)
+// ═══════════════════════════════════════════════════════════════════════════
+// Un personaje no puede resolverse con los roles de superficie: `primaryContainer`
+// se invierte entre claro y oscuro, y un abuelo con la cara oscura en modo
+// noche no es el mismo personaje, es otro. Así que Don Memo tiene su propia
+// paleta —declarada AQUÍ, junto al resto del sistema, nunca suelta dentro del
+// componente (La Regla del Rol, no del Hex)— con dos resoluciones que lo dejan
+// reconocible en ambos esquemas.
+//
+// La diferencia en oscuro no es una inversión: la cara baja un punto de brillo
+// para no deslumbrar a las 3 AM, y el suéter sube uno para despegarse del
+// fondo. El personaje es el mismo.
+
+export interface MascotPalette {
+  /** La cabeza: el compartimento del pastillero. */
+  head: string;
+  /** Costura de la tapa, en la frente. */
+  seam: string;
+  /** Los ojos. */
+  ink: string;
+  /** Armazón de los lentes y bigote. */
+  frame: string;
+  /** El suéter. */
+  body: string;
+  /** La camisa que asoma en el escote. */
+  shirt: string;
+  /** Solapas del suéter. */
+  lapel: string;
+  neck: string;
+  button: string;
+}
+
+const mascotLight: MascotPalette = {
+  head: teal.t95,
+  seam: teal.t80,
+  ink: teal.t10,
+  frame: teal.t40,
+  body: teal.t50,
+  shirt: teal.t90,
+  lapel: teal.t60,
+  neck: teal.t80,
+  button: teal.t90,
+};
+
+const mascotDark: MascotPalette = {
+  head: '#C2DCD3',
+  seam: '#6FAF9D',
+  ink: teal.t10,
+  frame: teal.t40,
+  body: '#3D8B79',
+  shirt: '#A9D2C4',
+  lapel: '#54A08D',
+  neck: '#6FAF9D',
+  button: '#A9D2C4',
+};
+
+/** Resuelve la paleta del personaje contra el esquema activo. */
+export const mascot = (scheme: ColorScheme): MascotPalette =>
+  scheme.dark ? mascotDark : mascotLight;
+
 /** Altura de la barra superior según su variante (Material 3). */
 export const APP_BAR_HEIGHT = {
   small: 64,

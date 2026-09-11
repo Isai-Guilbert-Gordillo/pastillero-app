@@ -1,3 +1,4 @@
+import DonMemo from '@/components/DonMemo';
 import { useFeedback } from '@/components/Feedback';
 import Button from '@/components/ui/Button';
 import IconBadge from '@/components/ui/IconBadge';
@@ -190,6 +191,19 @@ export default function PermissionsGuideScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+        {/* ─── Don Memo explica por qué ───
+            Era una pantalla de configuración árida: tres permisos del sistema
+            y nada que explicara para qué. Aquí sí habla en primera persona —
+            está explicando cómo funciona la app, no dando ninguna indicación
+            médica. */}
+        <View style={styles.intro}>
+          <DonMemo size={62} variant="head" gesture="greet" />
+          <Text variant="bodyMedium" tone="variant" style={styles.introText}>
+            Para avisarte a tiempo necesito que me des permiso en tres cosas.
+            Te acompaño paso por paso.
+          </Text>
+        </View>
+
         {/* ─── Los tres permisos, con su estado ─── */}
         <Text variant="labelMedium" tone="variant" style={styles.groupLabel}>
           LO QUE HAY QUE PERMITIR
@@ -334,6 +348,15 @@ const makeStyles = (t: ColorScheme) =>
     scroll: {
       paddingHorizontal: SCREEN_MARGIN,
       paddingBottom: SPACING.xxl,
+    },
+    intro: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.lg,
+      marginTop: SPACING.sm,
+    },
+    introText: {
+      flex: 1,
     },
     groupLabel: {
       marginTop: SPACING.xl,
