@@ -10,6 +10,7 @@ import TopAppBar from '@/components/ui/TopAppBar';
 import WebTimePicker from '@/components/WebTimePicker';
 import { useCaregiver } from '@/context/CaregiverContext';
 import { useTheme, useThemedStyles } from '@/context/ThemeContext';
+import { roundTo5Minutes, toStartTime } from '@/lib/doseSchedule';
 import { computeDoseDates, scheduleMedicationNotifications, scheduleNativeAlarms } from '@/lib/notifications';
 import { uploadMedicationPhoto } from '@/lib/photos';
 import { supabase } from '@/lib/supabase';
@@ -102,7 +103,19 @@ interface FormErrors {
   frequency?: string;
   days?: string;
   duration?: string;
+  firstDose?: string;
 }
+
+/**
+ * De dónde arranca el ciclo.
+ *
+ * `ya` es la razón de ser de esta pregunta: el caso real es "el doctor me la
+ * recetó, me tomé una hace un rato y ahora estoy dando de alta la app". Sin
+ * esto, la app no tiene forma de saber cuándo fue la última toma de verdad y
+ * ancla el horario a una hora arbitraria — la de registro — que puede caer a
+ * minutos de la toma real o a horas de distancia.
+ */
+type FirstDoseMode = 'ya' | 'despues';
 
 // ─── Los pasos del asistente ─────────────────────────────────────────────────
 // Una pregunta por pantalla. Don Memo la hace; el control de abajo la contesta.
@@ -130,9 +143,9 @@ const STEPS = [
   },
   {
     key: 'hora',
-    pregunta: '¿A qué hora es la primera?',
-    memo: 'La del día. Las demás las calculo yo solo.',
-    campos: [] as (keyof FormErrors)[],
+    pregunta: '¿Cuándo es la primera?',
+    memo: 'Si ya te la tomaste, cuento desde ahorita. Si no, dime a qué hora.',
+    campos: ['firstDose'] as (keyof FormErrors)[],
   },
   {
     key: 'dias',
@@ -180,6 +193,11 @@ export default function AddMedicationScreen() {
   const [durationDays, setDurationDays] = useState('');
   const [errors, setErrors] = useState<FormErrors>({});
   const [step, setStep] = useState(0);
+  const [firstDoseMode, setFirstDoseMode] = useState<FirstDoseMode | null>(null);
+  // El momento de la toma se CONGELA al elegir "ya me la tomé". Si se
+  // recalculara en cada render, el horario que se muestra y el que se guarda
+  // serían distintos por los minutos que tarde la persona en terminar el alta.
+  const [takenAt, setTakenAt] = useState<Date | null>(null);
 
   const clearError = (field: keyof FormErrors) => {
     setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
@@ -300,6 +318,7 @@ export default function AddMedicationScreen() {
     if (!finalFrequency || isNaN(Number(finalFrequency)) || Number(finalFrequency) <= 0) {
       next.frequency = 'Escribe cada cuántas horas se toma, por ejemplo 8.';
     }
+    if (!firstDoseMode) next.firstDose = 'Dime si ya te la tomaste o todavía no.';
     if (selectedDays.length === 0) next.days = 'Elige al menos un día de la semana.';
     if (regimenType === 'por_tiempo') {
       if (!durationDays || isNaN(Number(durationDays)) || Number(durationDays) <= 0) {
@@ -363,6 +382,14 @@ export default function AddMedicationScreen() {
 
     const finalFrequency = frequencyHours === 'custom' ? customFrequency : frequencyHours;
 
+    // Si ya se la tomó, el ciclo se ancla a ESA toma: la siguiente cae una
+    // frecuencia después. `start_time` sigue siendo "HH:mm" — no hace falta
+    // tocar el esquema, solo calcular bien la hora que se guarda.
+    const effectiveStartTime =
+      firstDoseMode === 'ya' && takenAt
+        ? toStartTime(roundTo5Minutes(new Date(takenAt.getTime() + Number(finalFrequency) * 3600_000)))
+        : startTime;
+
     setSaving(true);
 
     // Se guarda la ruta dentro del bucket, no una URL: el bucket es privado y
@@ -387,7 +414,7 @@ export default function AddMedicationScreen() {
         photo_url: photoUrl,
         dose_mg: Number(doseMg),
         frequency_hours: Number(finalFrequency),
-        start_time: startTime,
+        start_time: effectiveStartTime,
         days_of_week: selectedDays,
         regimen_type: regimenType,
         duration_days: regimenType === 'por_tiempo' ? Number(durationDays) : null,
@@ -444,6 +471,20 @@ export default function AddMedicationScreen() {
       }
     }
 
+    // La toma que la persona dijo que YA hizo queda registrada como tal. Es lo
+    // que le faltaba al historial: sin esto, el sistema no tiene forma de saber
+    // que esa dosis ocurrió, y el primer día aparece en blanco aunque la
+    // persona sí se haya tomado la medicina.
+    if (firstDoseMode === 'ya' && takenAt) {
+      await supabase.from('dose_records').insert({
+        medication_id: data.id,
+        user_id: activePatientId,
+        scheduled_at: takenAt.toISOString(),
+        taken: true,
+        responded_at: new Date().toISOString(),
+      });
+    }
+
     const doseDates = computeDoseDates(data);
 
     // Insertar primer registro de dosis con scheduled_at = primera toma real
@@ -483,6 +524,15 @@ export default function AddMedicationScreen() {
 
   const isCustomTime = !PRESET_TIMES.includes(startTime);
   const finalFrequencyLabel = frequencyHours === 'custom' ? customFrequency : frequencyHours;
+
+  // La hora que de verdad se va a guardar. Con "ya me la tomé" sale de la toma
+  // congelada + una frecuencia; si no, es la que se eligió en la rejilla.
+  // Mismo cálculo que usa handleSave, para que lo que se muestra en el resumen
+  // sea exactamente lo que se guarda.
+  const anchoredStartTime =
+    firstDoseMode === 'ya' && takenAt && Number(finalFrequencyLabel) > 0
+      ? toStartTime(roundTo5Minutes(new Date(takenAt.getTime() + Number(finalFrequencyLabel) * 3600_000)))
+      : startTime;
   const daysLabel =
     selectedDays.length === 7
       ? 'Todos los días'
@@ -596,9 +646,58 @@ export default function AddMedicationScreen() {
     </Surface>
   );
 
-  // ─── Paso 3: a qué hora empieza ───
+  // ─── Paso 3: cuándo es la primera ───
+  // Dos caminos. "Ya me la tomé" ancla el ciclo a la toma real; "todavía no"
+  // deja elegir la hora, que es como funcionaba antes.
   const renderHora = () => (
-    <Surface level={1} padded style={styles.group}>
+    <>
+      <Surface level={1} padded style={styles.group}>
+        <View style={styles.chipRow}>
+          <Chip
+            label="Ya me la tomé"
+            selected={firstDoseMode === 'ya'}
+            onPress={() => {
+              setFirstDoseMode('ya');
+              setTakenAt(new Date());
+              clearError('firstDose');
+            }}
+          />
+          <Chip
+            label="Todavía no"
+            selected={firstDoseMode === 'despues'}
+            onPress={() => {
+              setFirstDoseMode('despues');
+              setTakenAt(null);
+              clearError('firstDose');
+            }}
+          />
+        </View>
+        {!!errors.firstDose && (
+          <Text variant="bodySmall" tone="error" style={styles.groupError}>
+            {errors.firstDose}
+          </Text>
+        )}
+      </Surface>
+
+      {/* Camino A: ya se la tomó. No hay nada más que preguntar — la cuenta
+          sale sola, y se le dice en voz alta para que pueda desmentirla. */}
+      {firstDoseMode === 'ya' && takenAt && (
+        <View style={[styles.confirmStrip, { backgroundColor: scheme.surfaceContainer }]}>
+          <Ionicons name="checkmark-circle" size={24} color={scheme.success} />
+          <View style={styles.flex}>
+            <Text variant="labelMedium" tone="primary">
+              Anotada tu toma de las {formatTime12h(toStartTime(takenAt))}
+            </Text>
+            <Text variant="bodySmall" tone="variant">
+              La siguiente te la aviso a las {formatTime12h(anchoredStartTime)}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Camino B: todavía no. La rejilla de horas de siempre. */}
+      {firstDoseMode === 'despues' && (
+        <Surface level={1} padded style={styles.group}>
             <View style={styles.timeGrid}>
               {TIME_OPTIONS.map((opt) => {
                 const active = opt.value === 'custom' ? isCustomTime : startTime === opt.value;
@@ -656,7 +755,9 @@ export default function AddMedicationScreen() {
                 </Text>
               </View>
             </View>
-    </Surface>
+        </Surface>
+      )}
+    </>
   );
 
   // ─── Paso 4: qué días ───
@@ -734,7 +835,15 @@ export default function AddMedicationScreen() {
     const filas = [
       { icono: 'medical-outline' as const, etiqueta: 'Medicina', valor: `${name.trim() || '—'} · ${doseMg || '—'} mg`, paso: 1 },
       { icono: 'repeat-outline' as const, etiqueta: 'Cada', valor: `${finalFrequencyLabel || '—'} horas`, paso: 2 },
-      { icono: 'alarm-outline' as const, etiqueta: 'Primera toma', valor: formatTime12h(startTime), paso: 3 },
+      {
+        icono: 'alarm-outline' as const,
+        etiqueta: firstDoseMode === 'ya' ? 'Siguiente toma' : 'Primera toma',
+        valor:
+          firstDoseMode === 'ya' && takenAt
+            ? `${formatTime12h(anchoredStartTime)} · ya anoté la de las ${formatTime12h(toStartTime(takenAt))}`
+            : formatTime12h(startTime),
+        paso: 3,
+      },
       { icono: 'calendar-outline' as const, etiqueta: 'Días', valor: daysLabel || '—', paso: 4 },
       { icono: 'hourglass-outline' as const, etiqueta: 'Duración', valor: durationLabel, paso: 5 },
     ];

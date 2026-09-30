@@ -1,7 +1,6 @@
+import { doseGrid } from './doseSchedule';
 import { supabase } from './supabase';
 import { Medication } from './types';
-
-const DAY_TO_JS: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
 
 // No reconstruir historial más viejo que esto, aunque el medicamento sea más antiguo
 // (evita backfills gigantes en cuentas viejas y coincide con lo que History.tsx pedía).
@@ -16,29 +15,13 @@ const MAX_LOOKBACK_DAYS = 14;
  * dose_records) con la misma lógica que usa el resto de la app.
  */
 export function computeDoseDatesInRange(medication: Medication, from: Date, to: Date): Date[] {
-  const [h, m] = medication.start_time.split(':').map(Number);
-  const freqMs = medication.frequency_hours * 60 * 60 * 1000;
-  const allowedDays = new Set(
-    (medication.days_of_week?.length ? medication.days_of_week : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
-      .map((d) => DAY_TO_JS[d])
-  );
-
-  const anchor = new Date();
-  anchor.setHours(h, m, 0, 0);
-
-  let cursor = new Date(anchor);
-  while (cursor.getTime() > from.getTime()) {
-    cursor = new Date(cursor.getTime() - freqMs);
-  }
-
-  const dates: Date[] = [];
-  while (cursor.getTime() <= to.getTime()) {
-    if (cursor.getTime() >= from.getTime() && allowedDays.has(cursor.getDay())) {
-      dates.push(new Date(cursor));
-    }
-    cursor = new Date(cursor.getTime() + freqMs);
-  }
-  return dates;
+  return doseGrid({
+    startTime: medication.start_time,
+    frequencyHours: medication.frequency_hours,
+    daysOfWeek: medication.days_of_week,
+    from,
+    to,
+  });
 }
 
 export interface ReconcileResult {

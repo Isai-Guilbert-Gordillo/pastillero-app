@@ -1,6 +1,7 @@
 import * as IntentLauncher from 'expo-intent-launcher';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import { doseGrid } from './doseSchedule';
 import { Medication } from './types';
 
 try {
@@ -93,19 +94,7 @@ export async function registerForPushNotifications(): Promise<boolean> {
  * se recorta ahí — así un tratamiento vencido no sigue agendándose cada vez
  * que se renueva la ventana de notificaciones (ver renewMedicationNotificationsIfNeeded).
  */
-export function computeDoseDates(medication: Medication): Date[] {
-  const [hours, minutes] = medication.start_time.split(':').map(Number);
-  const frequencyMs = medication.frequency_hours * 60 * 60 * 1000;
-  const now = new Date();
-  const dates: Date[] = [];
-
-  // Primera dosis: hoy a la start_time. Si ya pasó, mañana.
-  const firstDose = new Date();
-  firstDose.setHours(hours, minutes, 0, 0);
-  if (firstDose <= now) {
-    firstDose.setDate(firstDose.getDate() + 1);
-  }
-
+export function computeDoseDates(medication: Medication, now: Date = new Date()): Date[] {
   // Límite: 7 días desde ahora, recortado a end_date si el tratamiento es por tiempo limitado
   let limit = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   if (medication.regimen_type === 'por_tiempo' && medication.end_date) {
@@ -113,13 +102,18 @@ export function computeDoseDates(medication: Medication): Date[] {
     if (end.getTime() < limit.getTime()) limit = end;
   }
 
-  let current = new Date(firstDose.getTime());
-  while (current <= limit) {
-    dates.push(new Date(current.getTime()));
-    current = new Date(current.getTime() + frequencyMs);
-  }
-
-  return dates;
+  // La rejilla vive en lib/doseSchedule.ts y la comparte el historial. Antes
+  // esta función tenía su propia cuenta, que rompía el ciclo saltando a mañana
+  // cuando start_time ya había pasado e ignoraba days_of_week — la alarma
+  // sonaba a una hora y el historial decía otra. Ver doseSchedule.ts.
+  return doseGrid({
+    startTime: medication.start_time,
+    frequencyHours: medication.frequency_hours,
+    daysOfWeek: medication.days_of_week,
+    from: now,
+    to: limit,
+    now,
+  });
 }
 
 /**
