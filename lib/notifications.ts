@@ -75,6 +75,34 @@ export async function registerForPushNotifications(): Promise<boolean> {
           console.log('Fallback channel also failed:', e2);
         }
       }
+
+      // ─── Canal aparte para los recordatorios de seguimiento ───
+      // En Android la vibración y la importancia son del CANAL, no de cada
+      // notificación: sin un segundo canal, el "oye, sigue pendiente" vibra
+      // tan fuerte como el "¡es tu hora!". Con tres medicamentos a la misma
+      // hora eso eran varias sacudidas de 6 segundos solapadas.
+      //
+      // La alarma manda una vez, con todo. El recordatorio avisa, no grita:
+      // importancia alta (no MAX), vibración corta, sin saltarse No molestar
+      // y con sonido de notificación, no de alarma.
+      try {
+        await Notifications.setNotificationChannelAsync('recordatorio_medicamentos', {
+          name: 'Recordatorio de dosis pendiente',
+          description: 'Aviso suave cuando una dosis sigue sin confirmarse',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 400],
+          sound: 'default',
+          enableVibrate: true,
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+          bypassDnd: false,
+          audioAttributes: {
+            usage: Notifications.AndroidAudioUsage.NOTIFICATION,
+            contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+          },
+        });
+      } catch (e) {
+        console.log('Reminder channel setup error:', e);
+      }
     }
 
     return true;
@@ -215,21 +243,29 @@ export async function scheduleNativeAlarms(medication: Medication): Promise<Nati
  * SISTEMA DE ALARMA PERSISTENTE PARA ABUELAS
  *
  * Por cada dosis programa:
- *   - 1 notificación principal al momento exacto
- *   - 3 recordatorios de seguimiento cada 5 minutos (15 minutos total)
+ *   - 1 notificación principal al momento exacto (canal de ALARMA)
+ *   - 1 recordatorio a los 5 minutos (canal de RECORDATORIO, suave)
  *
- * Antes eran 9 recordatorios cada 60 segundos — una ráfaga casi continua
- * que resultaba abrumadora, sobre todo combinada con la alarma nativa del
- * Reloj que ya suena para los medicamentos "indefinido" (ver alarm.tsx).
- * Solo se detienen cuando la abuela abre la app o toca "Ya la tomé".
+ * La escalada real no vive aquí. Primero fueron 9 recordatorios cada 60 s,
+ * luego 3 cada 5 min, y seguía siendo demasiado: con tres medicamentos a la
+ * misma hora eran 12 notificaciones en 20 minutos, cada una con 6 segundos
+ * de vibración de alarma, encima de las alarmas del Reloj que ya suenan solas
+ * para los "indefinido".
+ *
+ * Repetir la misma alarma cuatro veces no es escalar, es insistir. La escalada
+ * de verdad cambia de canal: si a los 30 minutos la dosis sigue sin confirmar,
+ * notify_caregivers_of_missed_doses() avisa al CUIDADOR (ver README). Eso cubre
+ * el caso de no respuesta mucho mejor que gritarle más fuerte a quien ya no
+ * está oyendo.
+ *
+ * Los recordatorios se cancelan en cuanto se confirma la dosis, desde la app
+ * o desde el botón de la notificación (ver cancelPersistentAlarm).
  */
-const REMINDER_COUNT = 3;         // 3 recordatorios después de la primera
-const REMINDER_INTERVAL_SEC = 300; // cada 5 minutos
+const REMINDER_COUNT = 1;         // 1 recordatorio después de la principal
+const REMINDER_INTERVAL_SEC = 300; // a los 5 minutos
 
 const REMINDER_MESSAGES = [
-  '¡Abre la app para confirmar tu dosis!',
-  '⚠️ ¡No olvides tu medicamento!',
-  '🚨 ¡Tu medicamento te está esperando!',
+  'Sigue pendiente. Toca "Ya la tomé" cuando la tomes.',
 ];
 
 export async function scheduleMedicationNotifications(medication: Medication): Promise<string[]> {
@@ -268,7 +304,9 @@ export async function scheduleMedicationNotifications(medication: Medication): P
       });
       notificationIds.push(mainId);
 
-      // ═══ Recordatorios de SEGUIMIENTO (cada 60s, 9 veces = 10 min) ═══
+      // ═══ Recordatorio de SEGUIMIENTO (uno, a los 5 min, en tono menor) ═══
+      // Ya no grita: canal suave, prioridad alta en vez de MAX, y se puede
+      // descartar. La alarma manda una vez; esto solo recuerda que sigue ahí.
       for (let i = 0; i < REMINDER_COUNT; i++) {
         const reminderSeconds = secondsFromNow + (i + 1) * REMINDER_INTERVAL_SEC;
         if (reminderSeconds <= 0) continue;
@@ -276,8 +314,8 @@ export async function scheduleMedicationNotifications(medication: Medication): P
         try {
           const reminderId = await Notifications.scheduleNotificationAsync({
             content: {
-              title: `🔔 ¡MEDICAMENTO PENDIENTE! (${i + 2}/${REMINDER_COUNT + 1})`,
-              body: `${medication.name} - ${medication.dose_mg}mg\n${REMINDER_MESSAGES[i]}`,
+              title: `Falta confirmar ${medication.name}`,
+              body: `${medication.dose_mg} mg · ${REMINDER_MESSAGES[i]}`,
               data: {
                 medicationId: medication.id,
                 type: 'ALARM',
@@ -286,16 +324,16 @@ export async function scheduleMedicationNotifications(medication: Medication): P
                 reminderIndex: i + 1,
               },
               sound: 'default',
-              priority: Notifications.AndroidNotificationPriority.MAX,
-              sticky: true,
-              autoDismiss: false,
+              priority: Notifications.AndroidNotificationPriority.HIGH,
+              sticky: false,
+              autoDismiss: true,
               categoryIdentifier: 'alarm',
             },
             trigger: {
               type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
               seconds: reminderSeconds,
               repeats: false,
-              channelId: 'alarma_medicamentos',
+              channelId: 'recordatorio_medicamentos',
             },
           });
           notificationIds.push(reminderId);
