@@ -11,7 +11,7 @@ import WebTimePicker from '@/components/WebTimePicker';
 import { useCaregiver } from '@/context/CaregiverContext';
 import { useTheme, useThemedStyles } from '@/context/ThemeContext';
 import { roundTo5Minutes, toStartTime } from '@/lib/doseSchedule';
-import { computeDoseDates, scheduleMedicationNotifications, scheduleNativeAlarms } from '@/lib/notifications';
+import { computeDoseDates, scheduleMedicationNotifications, scheduleNativeAlarms, scheduleTestAlarm } from '@/lib/notifications';
 import { uploadMedicationPhoto } from '@/lib/photos';
 import { supabase } from '@/lib/supabase';
 import { ColorScheme, SCREEN_MARGIN, SHAPE, SPACING, TOUCH, elevation } from '@/lib/theme';
@@ -518,7 +518,23 @@ export default function AddMedicationScreen() {
       return;
     }
 
-    snack(`${name.trim()} se agregó. La alarma ya está programada.`, { tone: 'success' });
+    // El hueco del primer uso: hasta aquí la persona hizo siete pasos y no
+    // recibió ninguna prueba de que esto funciona — la primera alarma real
+    // puede estar a horas de distancia. El snackbar con acción dura 6 s en vez
+    // de 4, suficiente para decidir sin interrumpir a quien no lo necesita.
+    const nombre = name.trim();
+    snack(`${nombre} se agregó. La alarma ya está programada.`, {
+      tone: 'success',
+      action: {
+        label: 'Probar',
+        onPress: () => {
+          scheduleTestAlarm(nombre).then(
+            () => snack('Te va a sonar en unos segundos.', { tone: 'default' }),
+            () => snack('No se pudo lanzar la prueba. Revisa los permisos de notificación.', { tone: 'error' })
+          );
+        },
+      },
+    });
     router.back();
   };
 

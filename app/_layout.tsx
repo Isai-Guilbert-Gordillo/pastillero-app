@@ -2,8 +2,9 @@ import { FeedbackProvider } from '@/components/Feedback';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { CaregiverProvider } from '@/context/CaregiverContext';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
-import { enqueueAlarm } from '@/lib/alarmQueue';
-import { registerForPushNotifications, setupNotificationCategories, snoozeAlarm } from '@/lib/notifications';
+import { enqueueAlarm, markConfirmed, removeFromQueue } from '@/lib/alarmQueue';
+import { saveDoseTakenWithRetry } from '@/lib/doseSync';
+import { cancelPersistentAlarm, registerForPushNotifications, setupNotificationCategories, snoozeAlarm } from '@/lib/notifications';
 import { registerDeviceToken, setupCaregiverChannel } from '@/lib/push';
 import {
     Poppins_400Regular,
@@ -27,6 +28,10 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function RootLayoutNav() {
   const { user, loading } = useAuth();
+  // Espejo de la sesión para los observadores de notificaciones, que se
+  // registran una sola vez y no verían los cambios de `user`.
+  const userRef = useRef(user);
+  userRef.current = user;
   const { scheme } = useTheme();
   const segments = useSegments();
   const router = useRouter();
@@ -171,7 +176,35 @@ function RootLayoutNav() {
         return;
       }
 
-      // Cualquier otra acción (tap, TAKE_MEDICINE) → abrir AlarmScreen
+      // "Ya la tomé" desde la notificación: se resuelve AQUÍ, sin abrir nada.
+      // Es lo mismo que hace handleStopAlarm en app/alarm.tsx, pero sin
+      // pantalla: callar los recordatorios de esta dosis, sacarla de la cola
+      // y registrarla. Antes este caso caía al `navigateToAlarm` de abajo y
+      // abría la alarma a pantalla completa para pedir la misma confirmación
+      // que la persona acababa de dar.
+      if (actionId === 'TAKE_MEDICINE') {
+        const medicationId = String(data.medicationId);
+        const scheduledAt = data.scheduledAt ? String(data.scheduledAt) : new Date().toISOString();
+        const item = { medicationId, scheduledAt };
+
+        cancelPersistentAlarm(medicationId, scheduledAt).catch(() => {});
+        removeFromQueue(item);
+        markConfirmed(item);
+
+        // Por la referencia, no por `user` directo: este observador se
+        // registra UNA vez (deps `[]`), así que leer `user` del closure daría
+        // el valor del montaje —null mientras carga la sesión— y la dosis
+        // nunca llegaría al servidor.
+        const currentUser = userRef.current;
+        if (currentUser) {
+          // Si falla la red queda en reintentos; no hay pantalla donde avisar,
+          // y reconcileDoseRecords lo recoge la próxima vez que se abra la app.
+          saveDoseTakenWithRetry(currentUser.id, medicationId, scheduledAt).catch(() => {});
+        }
+        return;
+      }
+
+      // Tocar el cuerpo de la notificación → abrir AlarmScreen
       console.log('🔔 Notificación tocada — abriendo AlarmScreen');
       navigateToAlarm(data);
     });

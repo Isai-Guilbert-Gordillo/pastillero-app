@@ -454,6 +454,42 @@ export async function cancelAllNotifications(): Promise<void> {
 }
 
 /**
+ * Dispara una alarma de PRUEBA dentro de unos segundos.
+ *
+ * Existe por un hueco real del primer uso: terminabas de dar de alta un
+ * medicamento y no pasaba nada durante horas, así que no había forma de saber
+ * si la cosa servía. Esto cierra ese bucle — configuras y, diez segundos
+ * después, lo ves y lo oyes.
+ *
+ * Y prueba lo que de verdad se rompe en la vida real: permiso de
+ * notificaciones, canal de alarma, sonido y que Android no esté matando la
+ * app por ahorro de batería.
+ *
+ * NO lleva `medicationId` ni `type: 'ALARM'` a propósito. Con esa carga, los
+ * observadores de app/_layout.tsx la tratarían como una dosis de verdad: se
+ * abriría la pantalla de alarma a pantalla completa y, peor, tocar "Ya la
+ * tomé" escribiría una dosis falsa en el historial médico. Una prueba no
+ * puede ensuciar el registro de salud.
+ */
+export async function scheduleTestAlarm(medicationName: string, seconds = 10): Promise<void> {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: '🔔 Prueba de alarma',
+      body: `Así se va a oír el recordatorio de ${medicationName}. Esto es solo una prueba, no una dosis.`,
+      sound: 'default',
+      priority: Notifications.AndroidNotificationPriority.MAX,
+      data: { type: 'TEST' },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds,
+      repeats: false,
+      channelId: 'alarma_medicamentos',
+    },
+  });
+}
+
+/**
  * Configura categorías de notificación con botones de acción.
  * Permite al usuario interactuar directamente desde la notificación.
  */
@@ -464,7 +500,13 @@ export async function setupNotificationCategories(): Promise<void> {
         identifier: 'TAKE_MEDICINE',
         buttonTitle: '✅ Ya la tomé',
         options: {
-          opensAppToForeground: true,
+          // `false` a propósito: el botón promete que con tocarlo ya está.
+          // Estaba en `true`, así que abría la app y además la pantalla de
+          // alarma a pantalla completa, donde había que confirmar OTRA VEZ —
+          // la única vía para resolverlo sin entrar a la app te metía a la
+          // app. La dosis se registra sin abrir nada; ver el observador de
+          // respuestas en app/_layout.tsx.
+          opensAppToForeground: false,
         },
       },
       {

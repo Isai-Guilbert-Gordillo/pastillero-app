@@ -12,7 +12,7 @@ import TextField from '@/components/ui/TextField';
 import TopAppBar from '@/components/ui/TopAppBar';
 import { useCaregiver } from '@/context/CaregiverContext';
 import { useTheme, useThemedStyles } from '@/context/ThemeContext';
-import { cancelAllMedicationNotifications, scheduleMedicationNotifications, scheduleNativeAlarms } from '@/lib/notifications';
+import { cancelAllMedicationNotifications, scheduleMedicationNotifications, scheduleNativeAlarms, scheduleTestAlarm } from '@/lib/notifications';
 import { deleteMedicationPhoto, uploadMedicationPhoto } from '@/lib/photos';
 import { supabase } from '@/lib/supabase';
 import { ColorScheme, SCREEN_MARGIN, SHAPE, SPACING, TOUCH, elevation, withAlpha } from '@/lib/theme';
@@ -861,6 +861,22 @@ export default function MedicationDetailScreen() {
           </>
         )}
 
+        {/* "¿Seguirá sonando?" es una duda que vuelve, sobre todo después de
+            que Android actualiza o cambia el ahorro de batería. Esta es su
+            respuesta: una alarma real en diez segundos. */}
+        <Button
+          title="Probar la alarma"
+          icon="volume-high-outline"
+          variant="outlined"
+          onPress={() => {
+            scheduleTestAlarm(medication.name).then(
+              () => snack('Te va a sonar en unos segundos.', { tone: 'default' }),
+              () => snack('No se pudo lanzar la prueba. Revisa los permisos de notificación.', { tone: 'error' })
+            );
+          }}
+          style={styles.testButton}
+        />
+
         <Button
           title="Eliminar medicamento"
           icon="trash-outline"
@@ -953,8 +969,11 @@ const makeStyles = (t: ColorScheme) =>
     pendingAction: {
       marginTop: SPACING.lg,
     },
-    deleteButton: {
+    testButton: {
       marginTop: SPACING.xxxl,
+    },
+    deleteButton: {
+      marginTop: SPACING.lg,
     },
     // ─── Edición ───
     photoCard: {
