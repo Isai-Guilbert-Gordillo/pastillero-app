@@ -90,9 +90,21 @@ export async function registerDeviceToken(): Promise<void> {
   // este token pertenece a otro usuario y RLS impediría reclamarla — el nuevo
   // dueño se quedaría sin avisos. register_device_token() lo resuelve del lado
   // del servidor (ver la migración "Avisos push al cuidador").
+  // La zona horaria viaja con el token porque el servidor no tiene otra forma
+  // de saberla: scheduled_at es timestamptz y una hora UTC fija le llegaría de
+  // madrugada a medio mundo. Con esto, el resumen diario sale a las 9 de la
+  // noche de cada quien.
+  let timezone: string | null = null;
+  try {
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
+  } catch {
+    timezone = null;
+  }
+
   const { error } = await supabase.rpc('register_device_token', {
     p_token: token,
     p_platform: Platform.OS,
+    p_timezone: timezone,
   });
 
   if (error) console.log('No se pudo guardar el token push:', error.message);

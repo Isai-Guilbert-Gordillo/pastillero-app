@@ -134,8 +134,22 @@ export async function reconcileDoseRecords(userId: string): Promise<ReconcileRes
  * Postgres (no comparación de texto en JS), así que el filtro es correcto
  * sin importar el formato exacto en que Postgres serialice la fecha.
  */
-export async function saveDoseTaken(userId: string, medicationId: string, scheduledAt: string): Promise<void> {
+/**
+ * @param userId      Dueño de la dosis — el PACIENTE, siempre.
+ * @param confirmedBy Quién tocó el botón. Normalmente el mismo paciente, pero
+ *                    puede ser un cuidador marcando por él ("mamá me llamó y
+ *                    me dijo que ya se la tomó"). Se guarda aparte porque un
+ *                    historial que mezcla "lo vi" con "me lo dijeron" deja de
+ *                    servir como dato de salud.
+ */
+export async function saveDoseTaken(
+  userId: string,
+  medicationId: string,
+  scheduledAt: string,
+  confirmedBy?: string | null
+): Promise<void> {
   const respondedAt = new Date().toISOString();
+  const confirmed = confirmedBy ?? userId;
 
   const { data: existing } = await supabase
     .from('dose_records')
@@ -148,7 +162,7 @@ export async function saveDoseTaken(userId: string, medicationId: string, schedu
   if (existing) {
     const { error } = await supabase
       .from('dose_records')
-      .update({ taken: true, responded_at: respondedAt })
+      .update({ taken: true, responded_at: respondedAt, confirmed_by: confirmed })
       .eq('id', existing.id);
     if (error) throw error;
   } else {
@@ -158,6 +172,7 @@ export async function saveDoseTaken(userId: string, medicationId: string, schedu
       scheduled_at: scheduledAt,
       taken: true,
       responded_at: respondedAt,
+      confirmed_by: confirmed,
     });
     if (error) throw error;
   }
@@ -173,11 +188,12 @@ export async function saveDoseTakenWithRetry(
   userId: string,
   medicationId: string,
   scheduledAt: string,
+  confirmedBy?: string | null,
   attempts: number = 3
 ): Promise<boolean> {
   for (let i = 0; i < attempts; i++) {
     try {
-      await saveDoseTaken(userId, medicationId, scheduledAt);
+      await saveDoseTaken(userId, medicationId, scheduledAt, confirmedBy);
       return true;
     } catch (e) {
       if (i === attempts - 1) {

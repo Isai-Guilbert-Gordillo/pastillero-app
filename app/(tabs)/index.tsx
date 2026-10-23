@@ -453,7 +453,15 @@ export default function HomeScreen() {
 
     // Guardado real en segundo plano — con reintentos por si la red falla
     const persist = async () => {
-      const ok = await saveDoseTakenWithRetry(med.user_id, med.id, scheduledDose.toISOString());
+      // `med.user_id` es el dueño de la dosis; `user?.id` es quien tocó el
+      // botón. Coinciden cuando el paciente confirma lo suyo, y difieren
+      // cuando un cuidador marca por él — el historial guarda la diferencia.
+      const ok = await saveDoseTakenWithRetry(
+        med.user_id,
+        med.id,
+        scheduledDose.toISOString(),
+        user?.id
+      );
       if (!ok) {
         snack(
           `${med.name} quedó marcada en el teléfono, pero no se guardó en el servidor.`,

@@ -29,6 +29,7 @@ import { MOTION, NAV_BAR_HEIGHT, SHAPE, SPACING, TOUCH } from '@/lib/theme';
 
 const ICONS: Record<string, { active: React.ComponentProps<typeof Ionicons>['name']; inactive: React.ComponentProps<typeof Ionicons>['name'] }> = {
   index: { active: 'home', inactive: 'home-outline' },
+  care: { active: 'people', inactive: 'people-outline' },
   history: { active: 'calendar', inactive: 'calendar-outline' },
   profile: { active: 'person', inactive: 'person-outline' },
 };

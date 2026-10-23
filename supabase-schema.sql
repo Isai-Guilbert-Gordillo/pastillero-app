@@ -904,3 +904,209 @@ BEGIN
   RETURN QUERY SELECT v_row.patient_user_id, v_row.patient_email;
 END;
 $$;
+
+-- ============================================
+-- MIGRACIÓN: El cuidador con casa propia
+--
+-- Tres piezas para que cuidar a alguien deje de ser "cambiarte de cuenta":
+--
+--  1. dose_records.confirmed_by — QUIÉN confirmó la dosis. El cuidador puede
+--     marcar una toma ("mamá me llamó y me dijo que ya se la tomó"), pero el
+--     registro tiene que distinguirlo de lo que el propio paciente confirmó en
+--     su teléfono. Un historial que mezcla "lo vi" con "me lo dijeron" deja de
+--     servir como dato de salud: un médico que lo lea no puede saber cuál es
+--     cuál. NULL = confirmaciones anteriores a esta migración.
+--
+--  2. device_tokens.timezone — sin esto no existe "una hora fija". scheduled_at
+--     es timestamptz y el servidor no sabe dónde vive nadie; mandar el resumen
+--     a una hora UTC fija le llegaría de madrugada a medio mundo. La app manda
+--     su zona IANA al registrar el token.
+--
+--  3. send_caregiver_daily_summary() — el resumen diario. Hoy la app solo le
+--     habla al cuidador para darle un susto ("no confirmó su dosis"); esto es
+--     lo contrario, la señal de que todo va bien, que es lo que de verdad
+--     construye confianza y da motivo para volver a abrirla.
+-- ============================================
+
+-- 1. Quién confirmó cada dosis ────────────────────────────────────────────────
+ALTER TABLE dose_records
+  ADD COLUMN IF NOT EXISTS confirmed_by UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+
+COMMENT ON COLUMN dose_records.confirmed_by IS
+  'Quién marcó la dosis. Si difiere de user_id, la confirmó un cuidador, no el paciente. NULL = anterior a esta migración.';
+
+-- 2. Zona horaria del dispositivo ─────────────────────────────────────────────
+ALTER TABLE device_tokens
+  ADD COLUMN IF NOT EXISTS timezone TEXT;
+
+-- Guarda contra reenvíos: el job corre cada hora y solo coincide una vez al
+-- día por zona, pero un cambio de horario de verano o un reintento podrían
+-- duplicar el aviso. Con esto, nunca dos resúmenes en menos de 20 h.
+ALTER TABLE device_tokens
+  ADD COLUMN IF NOT EXISTS last_daily_summary_at TIMESTAMPTZ;
+
+COMMENT ON COLUMN device_tokens.timezone IS
+  'Zona IANA del dispositivo (ej. America/Mexico_City). Decide a qué hora local se manda el resumen diario.';
+
+CREATE OR REPLACE FUNCTION register_device_token(
+  p_token TEXT,
+  p_platform TEXT DEFAULT NULL,
+  p_timezone TEXT DEFAULT NULL
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $fn$
+DECLARE
+  v_uid UUID := auth.uid();
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated';
+  END IF;
+
+  IF p_token IS NULL OR length(trim(p_token)) = 0 THEN
+    RAISE EXCEPTION 'empty_token';
+  END IF;
+
+  DELETE FROM device_tokens WHERE expo_push_token = p_token;
+
+  INSERT INTO device_tokens (user_id, expo_push_token, platform, timezone)
+  VALUES (v_uid, p_token, p_platform, p_timezone);
+END;
+$fn$;
+
+-- 3. Resumen diario al cuidador ───────────────────────────────────────────────
+-- Corre cada hora y manda solo a los cuidadores cuya hora LOCAL sea
+-- SUMMARY_HOUR. El día se cuenta en la zona del PACIENTE, no la del cuidador:
+-- si la hija vive en otro huso, "hoy" sigue siendo el día de su mamá.
+--
+-- No manda nada si el paciente no tenía dosis hoy — un "0 de 0" no es noticia,
+-- es ruido.
+CREATE OR REPLACE FUNCTION send_caregiver_daily_summary()
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, net, extensions, auth
+AS $fn$
+DECLARE
+  summary_hour CONSTANT INTEGER := 21; -- 9 de la noche, hora del cuidador
+  batch_size CONSTANT INTEGER := 100;
+  v_messages JSONB;
+  v_batch JSONB;
+  v_total INTEGER := 0;
+  i INTEGER;
+BEGIN
+  WITH destinatarios AS (
+    -- Cuidadores a los que ahora mismo les son las 21:00 en su propia zona y
+    -- que no han recibido resumen en las últimas 20 h.
+    SELECT
+      dt.id AS token_id,
+      dt.expo_push_token,
+      cl.patient_user_id,
+      COALESCE(dt.timezone, 'UTC') AS tz_cuidador
+    FROM device_tokens dt
+    JOIN caregiver_links cl
+      ON cl.caregiver_user_id = dt.user_id
+     AND cl.status = 'accepted'
+    WHERE dt.timezone IS NOT NULL
+      AND EXTRACT(HOUR FROM (now() AT TIME ZONE dt.timezone)) = summary_hour
+      AND (dt.last_daily_summary_at IS NULL
+           OR dt.last_daily_summary_at < now() - INTERVAL '20 hours')
+  ),
+  -- La zona del paciente decide qué cuenta como "hoy".
+  con_zona AS (
+    SELECT
+      d.*,
+      COALESCE(
+        (SELECT pt.timezone FROM device_tokens pt
+          WHERE pt.user_id = d.patient_user_id AND pt.timezone IS NOT NULL
+          ORDER BY pt.updated_at DESC LIMIT 1),
+        d.tz_cuidador
+      ) AS tz_paciente
+    FROM destinatarios d
+  ),
+  conteos AS (
+    SELECT
+      c.token_id,
+      c.expo_push_token,
+      c.patient_user_id,
+      COALESCE(NULLIF(u.raw_user_meta_data->>'full_name', ''), 'Tu familiar') AS paciente,
+      COUNT(dr.id) FILTER (WHERE dr.scheduled_at <= now()) AS debidas,
+      COUNT(dr.id) FILTER (WHERE dr.taken IS TRUE) AS tomadas
+    FROM con_zona c
+    LEFT JOIN auth.users u ON u.id = c.patient_user_id
+    LEFT JOIN dose_records dr
+      ON dr.user_id = c.patient_user_id
+     AND (dr.scheduled_at AT TIME ZONE c.tz_paciente)::date
+         = (now() AT TIME ZONE c.tz_paciente)::date
+    GROUP BY c.token_id, c.expo_push_token, c.patient_user_id, u.raw_user_meta_data
+  ),
+  marcados AS (
+    UPDATE device_tokens
+      SET last_daily_summary_at = now()
+      WHERE id IN (SELECT token_id FROM conteos WHERE debidas > 0)
+  )
+  SELECT jsonb_agg(
+    jsonb_build_object(
+      'to', expo_push_token,
+      'title', CASE WHEN tomadas >= debidas
+                    THEN 'Todo en orden hoy'
+                    ELSE 'Resumen del día' END,
+      'body', paciente || ' tomó ' || tomadas || ' de ' || debidas ||
+              CASE WHEN debidas = 1 THEN ' dosis hoy.' ELSE ' dosis hoy.' END,
+      'sound', 'default',
+      'priority', 'normal',
+      'channelId', 'avisos_cuidador',
+      'data', jsonb_build_object('type', 'CAREGIVER_SUMMARY')
+    )
+  )
+  INTO v_messages
+  FROM conteos
+  WHERE debidas > 0;
+
+  IF v_messages IS NULL THEN
+    RETURN 0;
+  END IF;
+
+  v_total := jsonb_array_length(v_messages);
+
+  i := 0;
+  WHILE i < v_total LOOP
+    SELECT jsonb_agg(elem)
+      INTO v_batch
+      FROM (
+        SELECT elem
+        FROM jsonb_array_elements(v_messages) WITH ORDINALITY AS t(elem, ord)
+        WHERE ord > i AND ord <= i + batch_size
+      ) s;
+
+    PERFORM net.http_post(
+      url := 'https://exp.host/--/api/v2/push/send',
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'Accept', 'application/json'
+      ),
+      body := v_batch
+    );
+
+    i := i + batch_size;
+  END LOOP;
+
+  RETURN v_total;
+END;
+$fn$;
+
+DO $do$
+BEGIN
+  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'send-caregiver-daily-summary') THEN
+    PERFORM cron.unschedule('send-caregiver-daily-summary');
+  END IF;
+END $do$;
+
+-- Cada hora en punto: dentro, la función filtra por hora local de cada quien.
+SELECT cron.schedule(
+  'send-caregiver-daily-summary',
+  '0 * * * *',
+  $job$SELECT send_caregiver_daily_summary();$job$
+);
